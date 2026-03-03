@@ -1,8 +1,20 @@
 [project]
 name = "digital-cerebellum"
 version = "0.1.0"
-description = "A cerebellar-inspired prediction-correction system for LLM Agents"
+description = "A cerebellar-inspired prediction-correction engine for LLM Agents"
+readme = "README.md"
 requires-python = ">=3.11"
+license = {text = "MIT"}
+keywords = ["cerebellum", "llm", "agent", "prediction", "neuroscience"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
 dependencies = [
     "torch>=2.2",
     "numpy>=1.26",
@@ -10,6 +22,7 @@ dependencies = [
     "sentence-transformers>=3.0",
     "faiss-cpu>=1.8",
     "openai>=1.30",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
@@ -18,11 +31,13 @@ dev = [
     "jupyter>=1.0",
     "matplotlib>=3.8",
 ]
-server = [
-    "fastapi>=0.110",
-    "uvicorn>=0.27",
-]
 
 [build-system]
 requires = ["setuptools>=68.0"]
-build-backend = "setuptools.backends._legacy:_Backend"
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["digital_cerebellum*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

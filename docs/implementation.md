@@ -1110,7 +1110,7 @@ Phase 0 的目标是用最少的代码验证核心假设：
   ├── docs/
   │   ├── architecture.md              # 架构设计
   │   └── implementation.md            # 实现指南（本文档）
-  ├── src/
+  ├── digital_cerebellum/            # pip install -e . → import digital_cerebellum
   │   ├── core/                        # 核心计算原语
   │   │   ├── pattern_separator.py     # ② 模式分离器 (RFF + Golgi 门控)
   │   │   ├── prediction_engine.py     # ③ 多头预测引擎 (PyTorch, K=4~8)

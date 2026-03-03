@@ -7,7 +7,7 @@ Phase 1: replace with ActiveDCN (learnable smoother + delay compensator).
 
 from __future__ import annotations
 
-from src.core.types import ErrorSignal, ErrorType, PredictionOutput, RouteDecision, RoutingResult
+from digital_cerebellum.core.types import ErrorSignal, ErrorType, PredictionOutput, RouteDecision, RoutingResult
 
 
 class DecisionRouter:

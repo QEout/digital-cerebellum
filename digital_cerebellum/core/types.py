@@ -66,10 +66,16 @@ class PredictionOutput:
     outcome_embedding: np.ndarray     # mean across K heads
     confidence: float                 # emergent from population agreement
     head_predictions: list[HeadPrediction]
+    task_outputs: dict[str, float] = field(default_factory=dict)
     domain_logits: np.ndarray | None = None
 
     # raw tensors kept for backward pass
     _raw_tensor: torch.Tensor | None = field(default=None, repr=False)
+
+    @property
+    def safety_score(self) -> float:
+        """Backward-compatible accessor for the tool_call microzone."""
+        return self.task_outputs.get("safety", 0.5)
 
 
 # ---------------------------------------------------------------------------

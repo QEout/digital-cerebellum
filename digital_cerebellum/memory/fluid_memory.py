@@ -17,7 +17,7 @@ from typing import Sequence
 
 import numpy as np
 
-from src.core.types import MemorySlot
+from digital_cerebellum.core.types import MemorySlot
 
 
 class FluidMemory:

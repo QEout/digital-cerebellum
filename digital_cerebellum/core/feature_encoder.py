@@ -52,6 +52,23 @@ class FeatureEncoder:
         return encoder.encode(text, normalize_embeddings=True)
 
     # ------------------------------------------------------------------
+    def encode_tool_call_raw(
+        self,
+        text: str,
+        timestamp: float | None = None,
+    ) -> np.ndarray:
+        """
+        Generic encoder: text → [text_embedding | time_features].
+
+        Used by the general-purpose pipeline.  Microzones provide the text
+        via their ``format_input`` method.
+        """
+        text_emb = self.encode_text(text)
+        ts = timestamp or time.time()
+        time_feats = self._time_features(ts)
+        return np.concatenate([text_emb, time_feats]).astype(np.float32)
+
+    # ------------------------------------------------------------------
     def encode_tool_call(
         self,
         tool_name: str,
@@ -60,20 +77,12 @@ class FeatureEncoder:
         timestamp: float | None = None,
     ) -> np.ndarray:
         """
-        Encode a tool call into a feature vector.
-
-        Concatenates:
-          [text_embedding (384) | time_features (4)]
+        Backward-compatible: encode a tool call into a feature vector.
         """
         text = f"{tool_name}({json.dumps(tool_params, ensure_ascii=False)})"
         if context:
-            text = f"{context} → {text}"
-        text_emb = self.encode_text(text)
-
-        ts = timestamp or time.time()
-        time_feats = self._time_features(ts)
-
-        return np.concatenate([text_emb, time_feats]).astype(np.float32)
+            text = f"{context} -> {text}"
+        return self.encode_tool_call_raw(text, timestamp)
 
     # ------------------------------------------------------------------
     @staticmethod

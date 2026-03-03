@@ -8,14 +8,14 @@ import numpy as np
 import torch
 import pytest
 
-from src.core.pattern_separator import PatternSeparator
-from src.core.prediction_engine import EngineConfig, PredictionEngine
-from src.core.error_comparator import ErrorComparator, cosine_distance
-from src.core.online_learner import OnlineLearner
-from src.core.types import ErrorType, PredictionOutput, RouteDecision
-from src.routing.decision_router import DecisionRouter
-from src.memory.fluid_memory import FluidMemory
-from src.core.types import MemorySlot
+from digital_cerebellum.core.pattern_separator import PatternSeparator
+from digital_cerebellum.core.prediction_engine import EngineConfig, PredictionEngine
+from digital_cerebellum.core.error_comparator import ErrorComparator, cosine_distance
+from digital_cerebellum.core.online_learner import OnlineLearner
+from digital_cerebellum.core.types import ErrorType, PredictionOutput, RouteDecision
+from digital_cerebellum.routing.decision_router import DecisionRouter
+from digital_cerebellum.memory.fluid_memory import FluidMemory
+from digital_cerebellum.core.types import MemorySlot
 
 
 # ======================================================================
@@ -96,13 +96,14 @@ class TestPredictionEngine:
     def test_confidence_higher_for_similar_heads(self):
         """If heads agree, confidence should be high."""
         engine = self._make_engine(K=4)
-        # Make all heads produce similar output by using same weights
+        # Make all heads produce similar output by copying weights AND masks
         with torch.no_grad():
             for head in engine.heads[1:]:
                 head.action_proj.weight.copy_(engine.heads[0].action_proj.weight)
                 head.action_proj.bias.copy_(engine.heads[0].action_proj.bias)
                 head.outcome_proj.weight.copy_(engine.heads[0].outcome_proj.weight)
                 head.outcome_proj.bias.copy_(engine.heads[0].outcome_proj.bias)
+                head.feature_mask.copy_(engine.heads[0].feature_mask)
 
         z = torch.randn(256)
         pred = engine(z)

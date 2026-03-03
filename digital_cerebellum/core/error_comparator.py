@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from src.core.types import ErrorSignal, ErrorType, PredictionOutput
+from digital_cerebellum.core.types import ErrorSignal, ErrorType, PredictionOutput
 
 
 def cosine_distance(a: np.ndarray, b: np.ndarray) -> float:

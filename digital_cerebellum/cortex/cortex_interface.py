@@ -27,13 +27,49 @@ class CortexInterface:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str = "qwen3.5-flash",
         api_key: str | None = None,
         base_url: str | None = None,
     ):
         from openai import OpenAI
         self.client = OpenAI(api_key=api_key, base_url=base_url)
         self.model = model
+
+    # ------------------------------------------------------------------
+    def evaluate_raw(
+        self,
+        system_prompt: str,
+        user_message: str,
+    ) -> dict[str, Any]:
+        """
+        Generic LLM evaluation — used by the microzone pipeline.
+
+        Sends system + user prompt and parses a JSON response.
+        """
+        try:
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message},
+                ],
+                temperature=0.0,
+                max_tokens=256,
+                extra_body={"enable_thinking": False},
+            )
+            text = resp.choices[0].message.content or "{}"
+            text = text.strip()
+            if text.startswith("```"):
+                text = text.split("\n", 1)[-1].rsplit("```", 1)[0]
+            return json.loads(text)
+        except Exception as e:
+            log.warning("LLM evaluation failed: %s", e)
+            return {
+                "safe": True,
+                "risk_type": "none",
+                "reasoning": f"LLM call failed ({e}), defaulting to safe",
+                "expected_outcome": "unknown",
+            }
 
     # ------------------------------------------------------------------
     def evaluate_tool_call(
@@ -79,6 +115,7 @@ class CortexInterface:
                 ],
                 temperature=0.0,
                 max_tokens=256,
+                extra_body={"enable_thinking": False},
             )
             text = resp.choices[0].message.content or "{}"
             text = text.strip()

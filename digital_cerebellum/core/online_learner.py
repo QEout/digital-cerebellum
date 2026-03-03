@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from src.core.types import ErrorSignal, ErrorType
+from digital_cerebellum.core.types import ErrorSignal, ErrorType
 
 
 class EWCRegularizer:
@@ -62,7 +62,8 @@ class EWCRegularizer:
         self._fisher_count += 1
         for name, param in model.named_parameters():
             if param.requires_grad and param.grad is not None:
-                # Incremental moving average of grad²
+                if name not in self._fisher:
+                    continue
                 self._fisher[name] += (
                     param.grad.data.pow(2) - self._fisher[name]
                 ) / self._fisher_count
@@ -72,7 +73,7 @@ class EWCRegularizer:
         """EWC regularisation loss: λ/2 · Σ F_i · (θ_i - θ*_i)²"""
         loss = torch.tensor(0.0)
         for name, param in self.model.named_parameters():
-            if name in self._fisher:
+            if name in self._fisher and name in self._param_snapshot:
                 diff = param - self._param_snapshot[name]
                 loss = loss + (self._fisher[name] * diff.pow(2)).sum()
         return (self.ewc_lambda / 2.0) * loss
@@ -85,14 +86,18 @@ class EWCRegularizer:
 
 class OnlineLearner:
     """
-    Drives online learning for the prediction engine (Site 1, Phase 0).
+    Drives online learning for the prediction engine.
+
+    The prediction heads (Purkinje analogues) are trained with SGD + EWC.
+    Task heads (DCN readouts) each have independent Adam optimizers.
+    A replay buffer stores recent training examples for rehearsal,
+    analogous to cerebellar offline replay during consolidation.
 
     Usage::
 
         learner = OnlineLearner(prediction_engine)
-
-        # after every prediction + actual-outcome pair:
-        loss = learner.learn(sparse_z, actual_action_emb, actual_outcome_emb)
+        loss = learner.learn(z, action_emb, outcome_emb,
+                             task_labels={"safety": 1.0, "risk": 0.2})
     """
 
     def __init__(
@@ -100,12 +105,34 @@ class OnlineLearner:
         model: nn.Module,
         lr: float = 0.01,
         ewc_lambda: float = 400.0,
+        task_lr: float = 0.005,
+        replay_size: int = 64,
+        replay_per_step: int = 4,
     ):
         self.model = model
-        self.optimizer = torch.optim.SGD(model.parameters(), lr=lr)
+
+        head_params = list(model.heads.parameters())
+        self.optimizer = torch.optim.SGD(head_params, lr=lr)
+
+        self._task_lr = task_lr
+        self.task_optimizers: dict[str, torch.optim.Optimizer] = {}
+        self._sync_task_optimizers()
+
         self.ewc = EWCRegularizer(model, ewc_lambda)
         self.cos_loss = nn.CosineEmbeddingLoss()
         self.step_count = 0
+
+        self._replay_buf: list[dict] = []
+        self._replay_size = replay_size
+        self._replay_per_step = replay_per_step
+
+    def _sync_task_optimizers(self):
+        """Create an Adam optimizer for each registered task head."""
+        for name, head in self.model.task_heads.items():
+            if name not in self.task_optimizers:
+                self.task_optimizers[name] = torch.optim.Adam(
+                    head.parameters(), lr=self._task_lr,
+                )
 
     # ------------------------------------------------------------------
     def learn(
@@ -113,43 +140,92 @@ class OnlineLearner:
         z: np.ndarray,
         actual_action_emb: np.ndarray,
         actual_outcome_emb: np.ndarray,
+        task_labels: dict[str, float] | None = None,
+        safe_label: bool | None = None,
     ) -> float:
         """
-        One SGD step on the prediction engine.
+        One SGD step on prediction heads + one Adam step per task head,
+        plus replay of recent examples from the buffer.
 
-        Returns the total loss (task + EWC).
+        ``task_labels``: dict mapping task head name → target value.
+        ``safe_label``:  backward-compatible shorthand for {"safety": 0/1}.
         """
+        labels = dict(task_labels or {})
+        if safe_label is not None and "safety" not in labels:
+            labels["safety"] = 1.0 if safe_label else 0.0
+
+        loss = self._learn_one(z, actual_action_emb, actual_outcome_emb, labels)
+
+        # Store in replay buffer
+        self._replay_buf.append({
+            "z": z, "a": actual_action_emb, "o": actual_outcome_emb,
+            "labels": labels,
+        })
+        if len(self._replay_buf) > self._replay_size:
+            self._replay_buf.pop(0)
+
+        # Replay recent examples
+        import random as _rng
+        n_replay = min(self._replay_per_step, len(self._replay_buf) - 1)
+        if n_replay > 0:
+            samples = _rng.sample(self._replay_buf[:-1], n_replay)
+            for s in samples:
+                self._learn_one(s["z"], s["a"], s["o"], s["labels"])
+
+        self.step_count += 1
+        return loss
+
+    def _learn_one(
+        self,
+        z: np.ndarray,
+        actual_action_emb: np.ndarray,
+        actual_outcome_emb: np.ndarray,
+        labels: dict[str, float],
+    ) -> float:
+        """Single training step (used by learn + replay)."""
         self.model.train()
+        self._sync_task_optimizers()
 
         z_t = torch.from_numpy(z).float().unsqueeze(0)
         target_a = torch.from_numpy(actual_action_emb).float().unsqueeze(0)
         target_o = torch.from_numpy(actual_outcome_emb).float().unsqueeze(0)
         ones = torch.ones(1)
 
-        # Forward through all heads
-        pred = self.model(z_t)
-
-        # Loss: average cosine loss across all heads
-        task_loss = torch.tensor(0.0)
+        # --- Prediction heads (EWC-regularised) ---
+        pred_loss = torch.tensor(0.0)
         for head in self.model.heads:
             a, o = head(z_t)
-            task_loss = task_loss + self.cos_loss(a, target_a, ones)
-            task_loss = task_loss + self.cos_loss(o, target_o, ones)
-        task_loss = task_loss / (len(self.model.heads) * 2)
+            pred_loss = pred_loss + self.cos_loss(a, target_a, ones)
+            pred_loss = pred_loss + self.cos_loss(o, target_o, ones)
+        pred_loss = pred_loss / (len(self.model.heads) * 2)
 
         ewc_loss = self.ewc.penalty()
-        total = task_loss + ewc_loss
+        head_total = pred_loss + ewc_loss
 
         self.optimizer.zero_grad()
-        total.backward()
-
-        # Update Fisher estimate after backward
+        head_total.backward()
         self.ewc.update_fisher(self.model)
-
         self.optimizer.step()
-        self.step_count += 1
 
-        return total.item()
+        # --- Task heads (independent, no EWC) ---
+        task_loss_total = 0.0
+        for name, target_val in labels.items():
+            if name not in self.model.task_heads or name not in self.task_optimizers:
+                continue
+            th = self.model.task_heads[name]
+            opt = self.task_optimizers[name]
+            target_t = torch.tensor([[target_val]])
+            pred_t = th(z_t)
+            if th.activation == "sigmoid":
+                loss = nn.functional.binary_cross_entropy(pred_t, target_t)
+            else:
+                loss = nn.functional.mse_loss(pred_t, target_t)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            task_loss_total += loss.item()
+
+        return head_total.item() + task_loss_total
 
     # ------------------------------------------------------------------
     def consolidate(self):
