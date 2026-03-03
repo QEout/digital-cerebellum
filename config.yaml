@@ -1,0 +1,39 @@
+# Digital Cerebellum 配置文件
+# 复制为 config.local.yaml 并填入你的 API 密钥
+
+# LLM 慢路径配置
+llm:
+  model: "qwen-turbo"                                            # qwen-turbo / qwen-plus / qwen-max
+  api_key: ""                                                     # 阿里云百炼 API Key (sk-xxxx)
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+# 模式分离器 (颗粒细胞层)
+pattern_separator:
+  rff_dim: 4096
+  gamma: 1.0
+  sparsity: 0.1
+
+# 预测引擎 (浦肯野细胞群体)
+prediction_engine:
+  num_heads: 4              # K — 群体编码头数
+  action_dim: 128
+  outcome_dim: 128
+  temperature: 1.0          # 置信度温度参数
+
+# 在线学习
+learning:
+  lr: 0.01
+  ewc_lambda: 400.0
+
+# 决策路由器 (深部核团)
+router:
+  threshold_high: 0.95      # 新微区初始保守阈值
+  threshold_low: 0.5
+
+# 嵌入模型
+embedding:
+  model: "all-MiniLM-L6-v2"   # 英文; 中文场景用 BAAI/bge-small-zh-v1.5
+
+# 存储
+storage:
+  save_dir: ".digital-cerebellum"
