@@ -4,8 +4,14 @@ version = "0.1.0"
 description = "A cerebellar-inspired prediction-correction engine for LLM Agents"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
-keywords = ["cerebellum", "llm", "agent", "prediction", "neuroscience"]
+license = "MIT"
+authors = [
+    {name = "QEout"},
+]
+keywords = [
+    "cerebellum", "llm", "agent", "prediction", "neuroscience",
+    "online-learning", "safety", "tool-call", "ai-agent",
+]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -24,6 +30,12 @@ dependencies = [
     "openai>=1.30",
     "pyyaml>=6.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/QEout/digital-cerebellum"
+Repository = "https://github.com/QEout/digital-cerebellum"
+Issues = "https://github.com/QEout/digital-cerebellum/issues"
+Documentation = "https://github.com/QEout/digital-cerebellum/blob/main/docs/architecture.md"
 
 [project.optional-dependencies]
 dev = [

@@ -111,12 +111,34 @@ Run the experiment yourself: `python -m experiments.closed_loop`
 - [x] Cortex interface (OpenAI-compatible LLM)
 - [x] Pluggable microzone architecture (universal cerebellar transform)
 - [x] Tool-call safety microzone (first plugin)
+- [x] Payment risk microzone (second plugin — proves generality)
 - [x] Main pipeline (`DigitalCerebellum` class)
-- [x] 23 unit tests passing
+- [x] 38 unit tests passing
 - [x] 210-step closed-loop validation with real LLM (4/4 metrics passed)
 - [x] `pip install -e .` SDK packaging
+- [x] Integration examples (OpenAI agent, LangChain guard, multi-microzone)
 
 See [roadmap](docs/architecture.md#十三应用场景与路线图) for Phase 1-3.
+
+## Multiple microzones (universal cerebellar transform)
+
+The same engine handles different domains through pluggable microzones:
+
+```python
+from digital_cerebellum import DigitalCerebellum
+from digital_cerebellum.microzones.tool_call import ToolCallMicrozone
+from digital_cerebellum.microzones.payment import PaymentMicrozone
+
+cb = DigitalCerebellum()
+cb.register_microzone(ToolCallMicrozone())
+cb.register_microzone(PaymentMicrozone())
+
+# Same engine, different domains:
+cb.evaluate("tool_call", {"tool_name": "delete_file", "tool_params": {"path": "/etc/passwd"}})
+cb.evaluate("payment", {"amount": 50000, "currency": "USD", "recipient": "unknown_account"})
+```
+
+Create your own microzone by subclassing `Microzone` — see `examples/` for patterns.
 
 ## Architecture
 
