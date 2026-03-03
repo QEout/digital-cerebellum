@@ -219,10 +219,33 @@ class AblationConfig:
     replay_size: int = 64
     ewc_lambda: float = 400.0
     use_task_heads: bool = True
+    # Phase 2 toggles
+    frequency_filter: bool = False
+    golgi_gate: bool = False
+    state_estimator: bool = False
 
     @staticmethod
     def full() -> "AblationConfig":
         return AblationConfig(label="full")
+
+    @staticmethod
+    def phase2_full() -> "AblationConfig":
+        return AblationConfig(
+            label="phase2_full",
+            frequency_filter=True, golgi_gate=True, state_estimator=True,
+        )
+
+    @staticmethod
+    def phase2_freq_only() -> "AblationConfig":
+        return AblationConfig(label="phase2_freq", frequency_filter=True)
+
+    @staticmethod
+    def phase2_golgi_only() -> "AblationConfig":
+        return AblationConfig(label="phase2_golgi", golgi_gate=True)
+
+    @staticmethod
+    def phase2_state_only() -> "AblationConfig":
+        return AblationConfig(label="phase2_state", state_estimator=True)
 
     @staticmethod
     def no_dendritic_mask() -> "AblationConfig":
@@ -255,6 +278,16 @@ class AblationConfig:
             cls.no_task_heads(),
         ]
 
+    @classmethod
+    def phase2_ablations(cls) -> list["AblationConfig"]:
+        return [
+            cls.full(),
+            cls.phase2_full(),
+            cls.phase2_freq_only(),
+            cls.phase2_golgi_only(),
+            cls.phase2_state_only(),
+        ]
+
 
 # ======================================================================
 # Runner
@@ -285,6 +318,11 @@ class BenchmarkRunner:
         cfg.ewc_lambda = self.ablation.ewc_lambda
         cfg.threshold_high = 0.85
         cfg.threshold_low = 0.4
+
+        # Phase 2 components
+        cfg.enable_frequency_filter = self.ablation.frequency_filter
+        cfg.enable_golgi_gate = self.ablation.golgi_gate
+        cfg.enable_state_estimator = self.ablation.state_estimator
 
         cb = DigitalCerebellum(cfg)
         cb.register_microzone(ToolCallMicrozone())

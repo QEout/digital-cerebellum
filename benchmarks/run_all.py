@@ -113,11 +113,38 @@ def run_baseline_comparison(cfg: CerebellumConfig, n: int = 200) -> list[Benchma
     return results
 
 
+def run_phase2_comparison(cfg: CerebellumConfig, n: int = 300) -> list[BenchmarkResult]:
+    """Compare Phase 1 (baseline) vs Phase 2 components."""
+    print("\n" + "=" * 70)
+    print("  PHASE 2 COMPARISON")
+    print("=" * 70)
+
+    dataset = generate_comprehensive_benchmark(n=n, seed=789)
+    results = []
+
+    for ablation in AblationConfig.phase2_ablations():
+        print(f"\n--- Running: {ablation.label} ---")
+        runner = BenchmarkRunner(cfg=cfg, ablation=ablation)
+        result = runner.run(dataset, warmup_ratio=0.4, verbose=False)
+        results.append(result)
+        print(f"  {ablation.label}: acc={result.accuracy:.1%} "
+              f"f1={result.f1:.3f} fast={result.fast_path_ratio:.1%} "
+              f"speedup={result.speedup:.1f}x")
+
+    print("\n" + "=" * 70)
+    print("  PHASE 2 COMPARISON")
+    print("=" * 70)
+    print(compare_results(results))
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(description="Digital Cerebellum Benchmarks")
     parser.add_argument("--quick", action="store_true", help="Quick run (100 samples)")
     parser.add_argument("--ablation", action="store_true", help="Run ablation study")
     parser.add_argument("--baseline", action="store_true", help="Run baseline comparison")
+    parser.add_argument("--phase2", action="store_true", help="Run Phase 2 comparison")
     parser.add_argument("--all", action="store_true", help="Run everything")
     parser.add_argument("--save", type=str, default=None, help="Save results to JSON")
     args = parser.parse_args()
@@ -126,7 +153,7 @@ def main():
     n = 100 if args.quick else 500
     all_results = []
 
-    if args.all or (not args.ablation and not args.baseline):
+    if args.all or (not args.ablation and not args.baseline and not args.phase2):
         result = run_full_benchmark(cfg, n=n)
         all_results.append(result)
 
@@ -137,6 +164,10 @@ def main():
     if args.baseline or args.all:
         baseline_results = run_baseline_comparison(cfg, n=min(n, 200))
         all_results.extend(baseline_results)
+
+    if args.phase2 or args.all:
+        phase2_results = run_phase2_comparison(cfg, n=min(n, 300))
+        all_results.extend(phase2_results)
 
     if args.save:
         out = [r.to_dict(include_steps=True) for r in all_results]

@@ -75,6 +75,14 @@ class CerebellumConfig:
     threshold_low: float = 0.5
     save_dir: str = ".digital-cerebellum"
 
+    # Phase 2 components
+    enable_frequency_filter: bool = False
+    frequency_alpha: float = 0.1
+    enable_golgi_gate: bool = False
+    golgi_target_sparsity: float = 0.1
+    enable_state_estimator: bool = False
+    state_dim: int = 64
+
     # LLM (slow path)
     llm_model: str = "qwen3.5-flash"
     llm_api_key: str | None = None
@@ -141,6 +149,21 @@ class CerebellumConfig:
             if st.get("save_dir"):
                 cfg.save_dir = st["save_dir"]
 
+            # Phase 2 components
+            p2 = data.get("phase2", {})
+            if "frequency_filter" in p2:
+                cfg.enable_frequency_filter = p2["frequency_filter"]
+            if "frequency_alpha" in p2:
+                cfg.frequency_alpha = p2["frequency_alpha"]
+            if "golgi_gate" in p2:
+                cfg.enable_golgi_gate = p2["golgi_gate"]
+            if "golgi_target_sparsity" in p2:
+                cfg.golgi_target_sparsity = p2["golgi_target_sparsity"]
+            if "state_estimator" in p2:
+                cfg.enable_state_estimator = p2["state_estimator"]
+            if "state_dim" in p2:
+                cfg.state_dim = p2["state_dim"]
+
         return cfg
 
 
@@ -194,6 +217,31 @@ class DigitalCerebellum:
             ewc_lambda=self.cfg.ewc_lambda,
             task_lr=self.cfg.task_lr,
         )
+
+        # Phase 2: Frequency filter (molecular layer interneurons)
+        self._freq_filter = None
+        if self.cfg.enable_frequency_filter:
+            from digital_cerebellum.core.frequency_filter import FrequencyFilter
+            self._freq_filter = FrequencyFilter(
+                dim=self.cfg.rff_dim, alpha=self.cfg.frequency_alpha, mode="gate",
+            )
+
+        # Phase 2: Golgi feedback gate
+        self._golgi_gate = None
+        if self.cfg.enable_golgi_gate:
+            from digital_cerebellum.core.golgi_gate import GolgiGate
+            self._golgi_gate = GolgiGate(
+                dim=self.cfg.rff_dim,
+                target_sparsity=self.cfg.golgi_target_sparsity,
+            )
+
+        # Phase 2: State estimator
+        self._state_estimator = None
+        if self.cfg.enable_state_estimator:
+            from digital_cerebellum.core.state_estimator import StateEstimator
+            self._state_estimator = StateEstimator(
+                state_dim=self.cfg.state_dim,
+            )
 
         # ⑦ Fluid memory + sleep cycle
         self.memory = FluidMemory()
@@ -285,6 +333,20 @@ class DigitalCerebellum:
         # ② Pattern separate
         z = self.separator.encode_event(feature_vec)
 
+        # Phase 2: Golgi feedback gate (adaptive sparsity)
+        if self._golgi_gate is not None:
+            with torch.no_grad():
+                z_t = torch.from_numpy(z).float()
+                z_t = self._golgi_gate(z_t)
+                z = z_t.numpy()
+
+        # Phase 2: Frequency filter (low/high band decomposition)
+        if self._freq_filter is not None:
+            with torch.no_grad():
+                z_t = torch.from_numpy(z).float()
+                z_t = self._freq_filter(z_t)
+                z = z_t.numpy()
+
         # ③ Predict
         prediction = self.engine.predict_numpy(z)
 
@@ -312,6 +374,17 @@ class DigitalCerebellum:
         result["_step"] = self._step
         result["_event_id"] = event_id
 
+        # Phase 2: State estimator tracking
+        if self._state_estimator is not None:
+            tool_name = payload.get("tool_name", microzone_name)
+            risk = prediction.task_outputs.get("safety_score", 0.0)
+            self._state_estimator.record_event(
+                tool_name=tool_name,
+                route=result.get("_route", "slow"),
+                confidence=prediction.confidence,
+                risk_score=risk,
+            )
+
         # Store for feedback
         self._pending[event_id] = {
             "z": z,
@@ -320,6 +393,7 @@ class DigitalCerebellum:
             "microzone": microzone_name,
             "payload": payload,
             "timestamp": t0,
+            "confidence": prediction.confidence,
         }
 
         # Memory
