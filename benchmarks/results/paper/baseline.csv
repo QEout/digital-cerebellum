@@ -1,0 +1,4 @@
+config,accuracy,f1,fast_path_ratio,fast_path_accuracy,speedup,avg_slow_ms
+pure_llm,0.92,0.9452,0.655,0.8855,158.9,1819.5
+no_learning,0.99,0.9928,0.0,0.0,0.0,1516.6
+full,0.985,0.9892,0.475,1.0,142.8,1691.1

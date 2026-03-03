@@ -478,6 +478,46 @@ def run_closed_loop(
     cb.save()
     print("\n  Checkpoint saved.")
 
+    # Save experiment data for paper reproducibility
+    from pathlib import Path
+    out_dir = Path("experiments/results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    records_data = [
+        {
+            "phase": r.phase, "step": r.step, "tool_name": r.tool_name,
+            "ground_truth_safe": r.ground_truth_safe,
+            "cerebellum_safe": r.cerebellum_safe, "llm_safe": r.llm_safe,
+            "confidence": r.confidence, "route": r.route,
+            "loss": r.loss, "latency_ms": r.latency_ms,
+            "llm_latency_ms": r.llm_latency_ms,
+        }
+        for r in records
+    ]
+    summary = {
+        "total_steps": total_steps,
+        "llm_calls": llm_call_count,
+        "m1_learning_curve_pass": m1_pass,
+        "m2_fast_path_ratio": b_fast / max(phase_b_steps, 1),
+        "m2_pass": m2_pass,
+        "m3_cb_gt_accuracy": cb_gt_rate,
+        "m3_cb_llm_agreement": cb_llm_rate,
+        "m3_pass": m3_pass,
+        "m4_avg_fast_ms": avg_fast,
+        "m4_avg_slow_ms": avg_slow,
+        "m4_speedup": speedup,
+        "m4_pass": m4_pass,
+        "m5_savings_rate": (total_steps - llm_call_count) / total_steps,
+        "overall_pass": total_pass,
+    }
+    output = {"summary": summary, "records": records_data}
+    out_path = out_dir / "closed_loop_results.json"
+    out_path.write_text(
+        json.dumps(output, indent=2, ensure_ascii=False, default=str),
+        encoding="utf-8",
+    )
+    print(f"  Experiment data saved to {out_path}")
+
     return records
 
 

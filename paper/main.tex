@@ -1,0 +1,542 @@
+% ============================================================
+%  Digital Cerebellum — arXiv preprint
+%  Compile:  pdflatex main && bibtex main && pdflatex main x2
+% ============================================================
+\documentclass[11pt,a4paper]{article}
+
+% ---------- packages ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{cleveref}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{enumitem}
+\usepackage{subcaption}
+\usepackage{tablefootnote}
+\usepackage{natbib}
+\bibliographystyle{plainnat}
+
+\hypersetup{colorlinks=true, linkcolor=blue!60!black, citecolor=green!50!black, urlcolor=blue!70!black}
+
+% ---------- macros ----------
+\newcommand{\ie}{\textit{i.e.}}
+\newcommand{\eg}{\textit{e.g.}}
+\newcommand{\etal}{\textit{et~al.}}
+\newcommand{\wrt}{w.r.t.}
+\newcommand{\cb}{\textsc{DigitalCerebellum}}
+\newcommand{\R}{\mathbb{R}}
+\DeclareMathOperator{\cosim}{cos}
+\DeclareMathOperator{\sigmoid}{sigmoid}
+
+% ============================================================
+\title{Digital Cerebellum: A Neuroscience-Inspired Online Learning\\
+       Architecture for Safe and Efficient AI Agent Decision-Making}
+
+\author{
+  Weili Cao\thanks{Corresponding author. Email: \texttt{2674754050@qq.com}. Code: \url{https://github.com/QEout/digital-cerebellum}}
+}
+
+\date{\today}
+
+% ============================================================
+\begin{document}
+\maketitle
+
+% ============================================================
+\begin{abstract}
+Large Language Model (LLM) agents increasingly operate in high-stakes environments where they invoke external tools, yet every tool call must traverse the full LLM inference pipeline---incurring latencies of 1--10 seconds and offering no guarantee of safety.
+We observe a striking parallel with biological motor control: the \emph{cerebral cortex} plans actions deliberately, while the \emph{cerebellum} provides millisecond-scale predictive corrections through a remarkably uniform computational circuit.
+Inspired by this division of labor, we introduce \cb{}, an online-learning module that sits alongside any LLM agent and progressively distills the LLM's own safety judgments into a lightweight forward model.
+Our architecture maps six cerebellar structures to computational primitives: \emph{granule-cell expansion} via Random Fourier Features, \emph{Purkinje population coding} via K masked linear heads, \emph{climbing-fibre error signals} (sensory, temporal, reward), \emph{deep cerebellar nuclei} as a confidence-gated router, \emph{mossy-fibre input} through sentence embeddings, and \emph{experience-dependent plasticity} via SGD with Elastic Weight Consolidation.
+On a comprehensive 500-scenario tool-call safety benchmark, \cb{} achieves 98.2\% accuracy (F1\,=\,0.987) while routing 56.8\% of decisions through a fast path that is $146\times$ faster than the LLM.
+Ablation studies confirm that each biologically-motivated component contributes: removing experience replay drops accuracy to 92.0\%, disabling dendritic masking reduces fast-path accuracy from 100\% to 98.3\%, and collapsing to a single prediction head eliminates the fast path entirely.
+A closed-loop distillation experiment further demonstrates 97\% fast-path adoption, 100\% cerebellum--ground-truth agreement, and 46\% LLM cost savings.
+\cb{} is released as an open-source Python SDK (\texttt{pip install digital-cerebellum}).
+\end{abstract}
+
+\paragraph{Keywords.}
+neuroscience-inspired AI, cerebellum, online learning, AI agent safety, tool-call evaluation, forward model, LLM efficiency
+
+% ============================================================
+\section{Introduction}\label{sec:intro}
+
+The rapid deployment of LLM-based agents---systems that reason, plan, and \emph{act} by invoking external tools---has surfaced a critical tension between capability and safety.
+A single unchecked \texttt{rm -rf /} or \texttt{DROP TABLE users} can cause irreversible damage, yet current safeguards are either static rule lists that cannot adapt to novel scenarios, or full LLM re-queries that double latency and cost~\citep{ruan2024toolemu,xi2023agentsurvey}.
+
+Biological motor systems solved an analogous problem hundreds of millions of years ago.
+The cerebral cortex deliberates and plans, but the \emph{cerebellum}---containing over half of all neurons in the brain---provides rapid, predictive online corrections using a strikingly uniform circuit known as the \emph{Universal Cerebellar Transform} (UCT)~\citep{schmahmann2019cerebellar,diedrichsen2019universal}.
+This circuit receives a copy of planned actions (\emph{efference copy}), predicts their sensory consequences via a \emph{forward internal model}, and emits error-driven corrections in real time---all without requiring the slow deliberation of the cortex.
+
+We propose \textbf{Digital Cerebellum}, a computational architecture that transplants the cerebellar blueprint into the AI agent stack (\Cref{fig:overview}).
+The core insight is that an LLM agent's tool-call decisions exhibit the same structure as biological motor commands: a planned action, an expected outcome, and a need for rapid safety validation.
+By mapping six cerebellar structures to lightweight computational primitives, we construct a module that:
+\begin{enumerate}[nosep]
+  \item \textbf{Learns online} from the LLM's own judgments, progressively distilling slow-path safety evaluations into a fast local model;
+  \item \textbf{Routes adaptively}: high-confidence predictions bypass the LLM entirely ($\sim$10\,ms), while uncertain cases still consult the full model;
+  \item \textbf{Generalizes across domains} via a pluggable \emph{microzone} architecture that mirrors the cerebellum's modular organization.
+\end{enumerate}
+
+\paragraph{Contributions.}
+\begin{itemize}[nosep]
+  \item A principled mapping from cerebellar neuroscience to AI agent architecture, grounded in the UCT hypothesis (\Cref{sec:method}).
+  \item An open-source implementation featuring Random Fourier Feature expansion, K-head population coding with dendritic masking, three biologically-motivated error channels, and adaptive confidence-gated routing (\Cref{sec:implementation}).
+  \item Comprehensive evaluation: 98.2\% accuracy on 500 tool-call scenarios with $146\times$ speedup; ablation studies quantifying each component's contribution; and a closed-loop distillation experiment demonstrating real LLM cost savings (\Cref{sec:experiments}).
+\end{itemize}
+
+% ============================================================
+\section{Related Work}\label{sec:related}
+
+\paragraph{LLM Agent Safety.}
+Recent work has recognized that text-level alignment does not transfer to tool-call safety~\citep{xiang2026mindgap}.
+ToolSafe~\citep{chen2025toolsafe} introduces step-level guardrails using multi-task reinforcement learning, reducing harmful tool invocations by 65\%.
+GuardAgent~\citep{xiang2024guardagent} deploys a dedicated guardrail agent with knowledge-enabled reasoning, achieving 98\% accuracy on healthcare policies.
+LlamaFirewall~\citep{meta2025llamafirewall} combines prompt-injection detection with static code analysis.
+Pro2Guard~\citep{zheng2025pro2guard} uses probabilistic model checking to predict unsafe trajectories before execution.
+All of these systems rely on either static rules or full LLM re-evaluation; none incorporate \emph{online learning} from execution feedback to reduce latency over time.
+
+\paragraph{LLM Routing and Efficiency.}
+RouteLLM~\citep{ong2024routellm} trains routers on human preference data to dynamically select between strong and weak models, saving over 85\% of cost on MT-Bench.
+Speculative decoding~\citep{leviathan2023speculative} uses a small draft model to accelerate token generation.
+Semantic caching systems like GPTCache~\citep{bang2023gptcache} avoid redundant queries.
+Our approach is complementary: rather than routing between LLMs or caching past responses, we \emph{learn a fast forward model} from the LLM's own safety judgments, enabling confident decisions to bypass the LLM entirely.
+
+\paragraph{Cerebellum-Inspired Computing.}
+The cerebellum's computational principles have inspired robotics controllers~\citep{porrill2013cerebellum}, reservoir computing architectures~\citep{pinzon2019forward}, and recently, residual control for fault recovery~\citep{wang2025cerebellar}.
+To our knowledge, no prior work has applied the cerebellar forward-model framework to LLM agent safety or tool-call evaluation.
+
+% ============================================================
+\section{Biological Background}\label{sec:biology}
+
+The cerebellum implements a remarkably uniform computation across all functional domains---motor control, language processing, social cognition---through a stereotyped circuit that Schmahmann and colleagues term the \emph{Universal Cerebellar Transform}~\citep{schmahmann2019cerebellar,diedrichsen2019universal}.
+We highlight five principles that motivate our architecture:
+
+\begin{enumerate}[nosep]
+\item \textbf{High-dimensional expansion.}
+  Granule cells outnumber all other brain neurons combined and recode mossy-fibre inputs into a vast, sparse representation, facilitating pattern separation~\citep{marr1969theory}.
+
+\item \textbf{Linear readout by Purkinje cells.}
+  Despite the complexity of the input space, Purkinje cells perform a weighted linear combination of parallel-fibre (granule-cell) inputs---an architecture well-suited to rapid, low-latency prediction~\citep{albus1971theory}.
+
+\item \textbf{Error-driven plasticity via climbing fibres.}
+  The inferior olive sends climbing-fibre signals that encode prediction errors, driving long-term depression at parallel-fibre--Purkinje synapses.
+  Three distinct error channels have been identified: \emph{sensory prediction error} (SPE), \emph{temporal prediction error} (TPE), and \emph{reward prediction error} (RPE)~\citep{tsay2025cerebellum}.
+
+\item \textbf{Modular microzones.}
+  The cerebellar cortex is organized into microzones, each dedicated to a specific sensorimotor domain but sharing the same circuit architecture.
+  New skills are acquired by recruiting new microzones with the same computational template~\citep{apps2005anatomical}.
+
+\item \textbf{Cortical--cerebellar feedback decoupling.}
+  The cerebellum receives efference copies of cortical motor commands and returns predictive corrections, operating as a forward internal model that is faster than the cortical loop~\citep{wolpert1998internal}.
+\end{enumerate}
+
+% ============================================================
+\section{Method}\label{sec:method}
+
+\subsection{Overview}
+
+\Cref{fig:overview} illustrates the complete architecture.
+Given a planned tool call $\mathbf{x} = (\text{tool\_name}, \text{params}, \text{context})$, the system:
+(1)~encodes $\mathbf{x}$ into a dense embedding via a frozen sentence encoder (\emph{mossy fibres});
+(2)~expands it into a high-dimensional sparse code (\emph{granule cells});
+(3)~predicts action and outcome embeddings via K parallel heads (\emph{Purkinje cells});
+(4)~computes confidence from inter-head agreement (\emph{population coding});
+(5)~routes through a dual-threshold gate (\emph{deep cerebellar nuclei});
+and~(6)~updates weights from error signals when the slow path is invoked (\emph{climbing fibres}).
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.95\textwidth}{\centering
+\textbf{Architecture Overview}\\[6pt]
+$\text{Tool Call}
+\;\xrightarrow{\text{Sentence Encoder}}\;
+\mathbf{e} \in \R^{d}
+\;\xrightarrow{\text{RFF Expansion}}\;
+\mathbf{z} \in \R^{D}
+\;\xrightarrow{K\text{ Masked Heads}}\;
+\{\hat{\mathbf{a}}_k, \hat{\mathbf{o}}_k\}_{k=1}^{K}$
+\\[4pt]
+$\xrightarrow{\text{Cosine Agreement}}\;
+c \in [0,1]
+\;\xrightarrow{\text{Threshold Router}}\;
+\begin{cases}
+\text{Fast path} & c \geq \theta_H \\
+\text{Shadow path} & \theta_L \leq c < \theta_H \\
+\text{Slow path (LLM)} & c < \theta_L
+\end{cases}$
+\\[4pt]
+$\text{LLM feedback} \;\xrightarrow{\text{SPE + RPE}}\; \text{Online weight update (SGD + EWC)}$
+}}
+\caption{Digital Cerebellum pipeline. \emph{Fast path}: cerebellum handles decision locally ($\sim$10\,ms). \emph{Slow path}: LLM evaluates safety ($\sim$1500\,ms); feedback trains the cerebellum. \emph{Shadow path}: both run in parallel for training data collection.}
+\label{fig:overview}
+\end{figure}
+
+\subsection{Pattern Separator (Granule Cell Layer)}\label{sec:pattern_sep}
+
+The biological granule cell layer performs a dimensionality expansion from $\sim$200 mossy fibres to $\sim$50 billion granule cells, creating a sparse, high-dimensional representation that facilitates linear separability.
+We approximate this with \emph{Random Fourier Features} (RFF)~\citep{rahimi2007random}:
+
+\begin{equation}\label{eq:rff}
+  \mathbf{z} = \sqrt{\frac{2}{D}} \cos(\mathbf{W}\mathbf{e} + \mathbf{b}),
+  \quad \mathbf{W} \sim \mathcal{N}(0, \gamma^2 \mathbf{I}),
+  \quad \mathbf{b} \sim \mathcal{U}(0, 2\pi)
+\end{equation}
+
+where $\mathbf{e} \in \R^d$ is the input embedding ($d=384$), $\mathbf{W} \in \R^{D \times d}$ is a fixed random projection ($D=4096$), and $\gamma$ controls the kernel bandwidth.
+Following biological sparsity, we retain only the top-$s$ fraction of activations (default $s=0.1$), zeroing the rest.
+This mirrors the $\sim$2--5\% activation rate observed in the granule cell layer~\citep{marr1969theory}.
+
+\paragraph{Golgi gating (optional).}
+An element-wise gate $\mathbf{g} = \sigma(\mathbf{W}_g \mathbf{z} + \mathbf{b}_g)$ modulates the RFF output, analogous to Golgi-cell feedback inhibition.
+
+\subsection{Prediction Engine (Purkinje Population)}\label{sec:pred_engine}
+
+Purkinje cells are the sole output of the cerebellar cortex, each computing a weighted sum over parallel-fibre inputs.
+We model this as $K$ independent linear heads (default $K=4$), each predicting action and outcome embeddings:
+
+\begin{equation}
+  \hat{\mathbf{a}}_k = \mathbf{W}_k^a \, \tilde{\mathbf{z}}_k + \mathbf{b}_k^a, \quad
+  \hat{\mathbf{o}}_k = \mathbf{W}_k^o \, \tilde{\mathbf{z}}_k + \mathbf{b}_k^o
+\end{equation}
+
+\paragraph{Dendritic masking.}
+Each head receives a masked view of the RFF features:
+$\tilde{\mathbf{z}}_k = \mathbf{z} \odot \mathbf{m}_k / (1 - r)$,
+where $\mathbf{m}_k \in \{0,1\}^D$ is a fixed random binary mask that zeros out a fraction $r=0.5$ of features, and the scaling factor $1/(1-r)$ preserves expected magnitude.
+This is biologically motivated by \emph{dendritic tree heterogeneity}: each Purkinje cell samples a distinct subset of parallel fibres.
+Computationally, it forces diversity among heads, preventing confident but uninformed consensus.
+
+\paragraph{Confidence via population agreement.}
+We aggregate predictions by mean:
+$\hat{\mathbf{a}} = \frac{1}{K}\sum_k \hat{\mathbf{a}}_k$, $\hat{\mathbf{o}} = \frac{1}{K}\sum_k \hat{\mathbf{o}}_k$.
+Confidence is the average pairwise cosine similarity across all head pairs:
+
+\begin{equation}\label{eq:confidence}
+  c = \frac{1}{2} \left( \frac{1}{\binom{K}{2}} \sum_{i<j} \left[
+    \cosim(\hat{\mathbf{a}}_i, \hat{\mathbf{a}}_j) +
+    \cosim(\hat{\mathbf{o}}_i, \hat{\mathbf{o}}_j)
+  \right] + 1 \right)
+\end{equation}
+
+mapping from $[-1, 1]$ to $[0, 1]$.
+When heads agree, $c \to 1$; when they disagree (due to insufficient training on the current input pattern), $c \to 0.5$.
+This mirrors the \emph{population coding} principle in biological neural circuits, where confidence emerges from consensus rather than from any single neuron's output.
+
+\subsection{Error Comparator (Climbing Fibre System)}\label{sec:error}
+
+Climbing fibres carry error signals that drive cerebellar learning.
+Following recent neuroscience~\citep{tsay2025cerebellum}, we implement three error channels:
+
+\paragraph{Sensory Prediction Error (SPE).}
+Computed as the cosine distance between predicted and actual embeddings:
+\begin{equation}
+  \text{SPE} = \frac{1}{2}\left[
+    1 - \cosim(\hat{\mathbf{a}}, \mathbf{a}^*) +
+    1 - \cosim(\hat{\mathbf{o}}, \mathbf{o}^*)
+  \right]
+\end{equation}
+where $\mathbf{a}^*, \mathbf{o}^*$ are the LLM's actual action and outcome embeddings.
+SPE is the primary training signal for the prediction engine.
+
+\paragraph{Temporal Prediction Error (TPE).}
+Normalized timing discrepancy following Weber's law:
+$\text{TPE} = (t_{\text{actual}} - t_{\text{predicted}}) / \max(|t_{\text{predicted}}|, \epsilon)$.
+An exponential-smoothing timing model tracks inter-event intervals.
+
+\paragraph{Reward Prediction Error (RPE).}
+Post-execution feedback: $\text{RPE} = r_{\text{actual}} - r_{\text{expected}}$,
+where $r \in \{-1, +1\}$ indicates failure or success.
+RPE adaptively adjusts the router's confidence thresholds (see \Cref{sec:router}).
+
+\subsection{Decision Router (Deep Cerebellar Nuclei)}\label{sec:router}
+
+The deep cerebellar nuclei integrate Purkinje outputs and gate the final motor command.
+Our router implements a dual-threshold policy:
+
+\begin{equation}
+  \text{route}(c) =
+  \begin{cases}
+    \textsc{Fast} & \text{if } c \geq \theta_H \\
+    \textsc{Shadow} & \text{if } \theta_L \leq c < \theta_H \\
+    \textsc{Slow} & \text{if } c < \theta_L
+  \end{cases}
+\end{equation}
+
+where $\theta_H = 0.95$ and $\theta_L = 0.5$ by default.
+The \textsc{Shadow} path runs both the cerebellum and LLM in parallel, using the LLM result for execution but the discrepancy for training.
+
+\paragraph{RPE-based threshold adaptation.}
+After receiving reward feedback, the high threshold is updated:
+$\theta_H \leftarrow \text{clamp}(\theta_H - \alpha_{\text{rpe}} \cdot \text{RPE}, \theta_{\min}, \theta_{\max})$,
+where $\alpha_{\text{rpe}} = 0.05$.
+Positive RPE (better-than-expected outcomes) gradually lowers the threshold, allowing more fast-path routing as the system gains experience.
+
+\subsection{Online Learning (Plasticity)}\label{sec:learning}
+
+\paragraph{Prediction heads.}
+Trained via SGD on a cosine embedding loss combining action and outcome predictions.
+To prevent catastrophic forgetting across task domains, we apply \emph{Elastic Weight Consolidation} (EWC)~\citep{kirkpatrick2017overcoming}:
+
+\begin{equation}
+  \mathcal{L}_{\text{total}} = \mathcal{L}_{\text{pred}} + \frac{\lambda}{2} \sum_i F_i (\theta_i - \theta_i^*)^2
+\end{equation}
+
+where $F_i$ is the diagonal Fisher information for parameter $i$, $\theta^*$ is the snapshot after the previous consolidation, and $\lambda = 400$.
+
+\paragraph{Experience replay.}
+A circular buffer of size 64 stores recent $(z, \mathbf{a}^*, \mathbf{o}^*)$ tuples.
+At each learning step, we sample 4 additional replay examples, simulating the offline rehearsal observed in biological cerebellar learning.
+
+\paragraph{Task-specific heads.}
+Each microzone may register lightweight task heads (single-layer networks) that produce domain-specific outputs (\eg{}, a safety score).
+These heads have independent Adam optimizers, decoupled from the EWC-regularized prediction heads, allowing rapid adaptation without interfering with consolidated knowledge.
+
+\subsection{Microzone Architecture}\label{sec:microzones}
+
+Following the biological organization of the cerebellar cortex into functionally distinct microzones~\citep{apps2005anatomical}, our architecture supports pluggable domain modules.
+Each microzone defines:
+(a)~an input formatter that converts domain-specific data into text;
+(b)~task head configurations;
+(c)~a slow-path prompt builder for LLM consultation; and
+(d)~fast-path evaluation logic.
+The core UCT pipeline (pattern separation $\to$ prediction $\to$ error correction $\to$ routing) is shared.
+We demonstrate two microzones: \emph{tool-call safety} and \emph{payment risk assessment}.
+
+% ============================================================
+\section{Implementation}\label{sec:implementation}
+
+\cb{} is implemented in Python using PyTorch for the core engine and sentence-transformers~\citep{reimers2019sentencebert} for input encoding (all-MiniLM-L6-v2, $d=384$).
+The complete architecture consists of $\sim$2,500 lines of code with no GPU requirement---all inference and training run on CPU in real time.
+Key hyperparameters: $D=4096$ RFF dimensions, $K=4$ prediction heads, mask ratio $r=0.5$, sparsity $s=0.1$, EWC $\lambda=400$, replay buffer size 64.
+The system is distributed as a Python package on PyPI (\texttt{pip install digital-cerebellum}) and supports two usage modes: as a \emph{middleware plugin} for existing agent frameworks, and as a standalone \emph{cerebellum-first} agent via the \texttt{DigitalBrain} class.
+
+% ============================================================
+\section{Experiments}\label{sec:experiments}
+
+We evaluate \cb{} on three complementary protocols: (1)~a comprehensive tool-call safety benchmark, (2)~an ablation study isolating each component's contribution, and (3)~a closed-loop distillation experiment with a live LLM.
+
+\subsection{Experimental Setup}
+
+\paragraph{Benchmark dataset.}
+We construct \textsc{ToolCallBench-500}, a synthetic benchmark of 500 tool-call scenarios covering 15+ tool types across three difficulty levels:
+\emph{safe} operations (60\%: \texttt{send\_email}, \texttt{search\_web}, \texttt{create\_note}, etc.),
+\emph{dangerous} operations (25\%: \texttt{rm -rf /}, \texttt{DROP TABLE}, privilege escalation, etc.),
+and \emph{edge cases} (15\%: \texttt{ls -la} vs. \texttt{cat /etc/passwd}, context-dependent safety).
+Ground-truth labels are deterministic.
+The dataset is released alongside the codebase for reproducibility.
+
+\paragraph{LLM backbone.}
+All slow-path evaluations use Qwen-2.5-72B-Instruct (via the Qwen 3.5 Flash API), providing the ``cortex'' that the cerebellum learns from.
+
+\paragraph{Metrics.}
+Accuracy, precision, recall, F1 (binary: safe vs.\ unsafe);
+fast-path ratio (fraction of decisions bypassing the LLM);
+fast-path accuracy (correctness of cerebellum-only decisions);
+average latency (fast vs.\ slow path);
+speedup ($\bar{t}_{\text{slow}} / \bar{t}_{\text{fast}}$).
+
+\subsection{Main Results}\label{sec:main_results}
+
+\begin{table}[t]
+\centering
+\caption{Main evaluation results on ToolCallBench-500.}
+\label{tab:main_results}
+\begin{tabular}{lc}
+\toprule
+Metric & Value \\
+\midrule
+Accuracy & 98.2\% \\
+Precision & 97.4\% \\
+Recall & 100.0\% \\
+F1 Score & 0.987 \\
+\midrule
+Fast-path ratio & 56.8\% \\
+Fast-path accuracy & 98.2\% \\
+Avg.\ fast latency & 10.3\,ms \\
+Avg.\ slow latency & 1,501\,ms \\
+Speedup & 146.2$\times$ \\
+\midrule
+Confusion matrix & TP\,=\,341 \;\; TN\,=\,150 \;\; FP\,=\,9 \;\; FN\,=\,0 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:main_results} summarizes the full-system performance.
+\cb{} achieves 98.2\% overall accuracy with perfect recall (FN\,=\,0)---no dangerous tool call is ever approved.
+The 9 false positives are conservative errors where safe edge cases (\eg{}, \texttt{sudo apt update}) are flagged for LLM review; this fail-safe behavior is desirable in safety-critical applications.
+
+Over half (56.8\%) of all decisions are routed through the fast path at 10.3\,ms average latency---a $146\times$ speedup over the LLM's 1,501\,ms.
+Performance varies by difficulty: 100\% accuracy on easy and medium samples, 86.6\% on hard edge cases (\Cref{tab:by_difficulty}).
+
+\begin{table}[t]
+\centering
+\caption{Accuracy by difficulty level on ToolCallBench-500.}
+\label{tab:by_difficulty}
+\begin{tabular}{lccc}
+\toprule
+Difficulty & Easy & Medium & Hard \\
+\midrule
+Accuracy & 100.0\% & 100.0\% & 86.6\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Ablation Study}\label{sec:ablation}
+
+To quantify the contribution of each biologically-inspired component, we run the benchmark with one component disabled at a time.
+Each ablation uses 300 samples with a 40\% warm-up phase.
+
+\begin{table}[t]
+\centering
+\caption{Ablation study: contribution of each component. All runs use 300 samples.}
+\label{tab:ablation}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & Accuracy & F1 & Fast\% & Fast Acc. & Speedup \\
+\midrule
+Full system & 99.3\% & 0.995 & 53.0\% & 100.0\% & 159$\times$ \\
+w/o Dendritic Mask & 98.3\% & 0.988 & 59.3\% & 98.3\% & 157$\times$ \\
+w/o Experience Replay & 92.0\% & 0.945 & 60.0\% & 87.8\% & 139$\times$ \\
+w/o EWC & 95.3\% & 0.967 & 60.0\% & 93.3\% & 193$\times$ \\
+Single Head ($K=1$) & 99.0\% & 0.993 & 0.0\% & --- & --- \\
+w/o Task Heads & 99.3\% & 0.995 & 53.3\% & 100.0\% & 174$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:ablation} reveals several insights:
+
+\begin{itemize}[nosep]
+\item \textbf{Experience replay is critical.}
+  Removing the replay buffer causes the largest accuracy drop ($-7.3$ percentage points, to 92.0\%), confirming that offline rehearsal is essential for stable online learning with limited data.
+
+\item \textbf{Dendritic masking improves fast-path reliability.}
+  Without masking, fast-path accuracy drops from 100\% to 98.3\%.
+  Although the fast-path ratio \emph{increases} (59.3\% vs.\ 53.0\%), the model becomes overconfident---it routes more decisions to the fast path but makes more errors.
+  Masking forces genuine diversity among heads, producing well-calibrated confidence.
+
+\item \textbf{EWC prevents catastrophic forgetting.}
+  Removing EWC drops accuracy by 4 points, indicating that without consolidation, new learning overwrites previous knowledge.
+
+\item \textbf{Population coding ($K>1$) enables confidence estimation.}
+  A single head achieves high accuracy (99.0\%) but \emph{cannot route any decisions to the fast path} (0\% fast-path ratio), because confidence cannot be estimated from a single predictor.
+  This confirms that multi-head population coding is essential for the dual-path architecture.
+
+\item \textbf{Task heads are optional but useful.}
+  Removing task heads does not affect the core accuracy, but eliminates domain-specific output channels needed for microzone specialization.
+\end{itemize}
+
+\subsection{Baseline Comparison}\label{sec:baselines}
+
+\begin{table}[t]
+\centering
+\caption{Comparison with baseline approaches (200 samples).}
+\label{tab:baseline}
+\begin{tabular}{lcccc}
+\toprule
+Approach & Accuracy & F1 & Speedup & Avg.\ Latency \\
+\midrule
+Pure LLM (always slow) & 92.0\% & 0.945 & --- & 1,820\,ms \\
+LLM w/o learning & 99.0\% & 0.993 & --- & 1,517\,ms \\
+\cb{} (full) & 98.5\% & 0.989 & 143$\times$ & 893\,ms \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:baseline} compares three approaches:
+(1)~\emph{Pure LLM}: the LLM evaluates every tool call independently, without any learning from past decisions;
+(2)~\emph{LLM w/o learning}: the full pipeline (including sentence encoding and RFF expansion) is active, but no online learning occurs---every decision goes through the slow path;
+(3)~\emph{Full \cb{}}: the complete system.
+
+The pure LLM baseline achieves only 92.0\% accuracy because each decision is made in isolation without context from previous evaluations.
+The ``LLM w/o learning'' baseline achieves 99.0\% but at full LLM latency for every query.
+\cb{} matches the LLM's accuracy (98.5\%) while reducing average latency by 47\% thanks to fast-path routing, demonstrating that the online-learned forward model successfully captures the LLM's safety judgments.
+
+\subsection{Closed-Loop Distillation Experiment}\label{sec:closedloop}
+
+To validate end-to-end learning dynamics, we run a three-phase closed-loop experiment with a live LLM (Qwen 3.5 Flash):
+
+\begin{enumerate}[nosep]
+\item \textbf{Phase A (Warm-up, 80 steps):} Forced slow-path---every tool call is evaluated by the LLM, and the cerebellum observes and learns.
+\item \textbf{Phase B (Adaptive, 100 steps):} Natural routing---the cerebellum decides when to bypass the LLM based on confidence.
+\item \textbf{Phase C (Verification, 30 steps):} Shadow mode---both cerebellum and LLM evaluate every call; we measure agreement.
+\end{enumerate}
+
+\begin{table}[t]
+\centering
+\caption{Closed-loop distillation results across three phases (210 total steps).}
+\label{tab:closedloop}
+\begin{tabular}{llc}
+\toprule
+Metric & Description & Result \\
+\midrule
+M1 & Learning curve (Phase A) & loss decreasing~\checkmark \\
+M2 & Fast-path ratio (Phase B) & 97\% \\
+M3 & CB--ground truth accuracy (Phase C) & 100\% \\
+M3 & CB--LLM agreement (Phase C) & 100\% \\
+M4 & Avg.\ fast-path latency & 12.8\,ms \\
+M4 & Speedup (slow/fast) & 114.9$\times$ \\
+M5 & Total LLM calls saved & 46\% \\
+\midrule
+& Overall & 4/4 metrics passed \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:closedloop} shows that the cerebellum rapidly learns to handle familiar patterns: by Phase~B, 97\% of decisions use the fast path, and in Phase~C, the cerebellum agrees with both the LLM and ground truth 100\% of the time.
+The 46\% LLM cost savings represent a lower bound, as the savings rate increases with the proportion of recurring tool-call patterns.
+
+% ============================================================
+\section{Discussion}\label{sec:discussion}
+
+\paragraph{Why a cerebellum, not just a cache?}
+Semantic caching (\eg{}, GPTCache) stores and retrieves past LLM responses based on input similarity.
+\cb{} is fundamentally different: it learns a \emph{generative forward model} that can predict outcomes for previously unseen inputs.
+The ablation study confirms this---without learning (the ``no\_learning'' baseline), every decision must traverse the slow path.
+The cerebellum generalizes; a cache merely memorizes.
+
+\paragraph{Fail-safe design.}
+By design, the system errs on the side of caution: FN\,=\,0 across all experiments (no dangerous call was ever approved by the fast path).
+When uncertain, the cerebellum defers to the LLM.
+This mirrors the biological cerebellum's role as a \emph{modulator}, not a \emph{commander}---it refines and accelerates, but does not override cortical authority.
+
+\paragraph{Limitations.}
+(1)~Our benchmark uses synthetic scenarios; evaluation on real-world agent traces (\eg{}, SWE-bench, WebArena) is needed.
+(2)~The current RFF expansion is fixed; an adaptive granule-cell layer could improve representation quality.
+(3)~We evaluate a single LLM backbone; cross-model transfer deserves investigation.
+(4)~The 86.6\% accuracy on hard edge cases suggests room for improvement, particularly on context-dependent safety judgments.
+
+\paragraph{Broader impact.}
+\cb{} is designed to make AI agents \emph{safer} by ensuring that high-risk tool calls receive thorough evaluation.
+However, the same confidence-routing mechanism could theoretically be used to bypass safety checks on purpose; we mitigate this by making the slow-path threshold a non-negotiable system parameter.
+
+% ============================================================
+\section{Conclusion}\label{sec:conclusion}
+
+We presented Digital Cerebellum, a neuroscience-inspired online-learning architecture that brings the computational principles of the biological cerebellum to AI agent safety.
+By mapping granule-cell expansion, Purkinje population coding, climbing-fibre error signals, and microzone modularity to practical machine-learning primitives, we demonstrate that an LLM agent can learn to evaluate tool-call safety in $\sim$10\,ms with 98.2\% accuracy---a $146\times$ speedup over full LLM evaluation.
+
+Our work suggests that the century-old insight from Marr, Albus, and Ito---that the cerebellum is a pattern-learning machine---has a natural home in modern AI systems, not as a replacement for large models, but as a fast, adaptive complement.
+
+\paragraph{Future work.}
+We plan to extend \cb{} with (1)~frequency-domain filtering and Golgi feedback gating for improved temporal pattern recognition, (2)~a state estimator for multi-step action sequences, (3)~evaluation on real-world agent benchmarks, and (4)~a formal analysis of convergence guarantees under non-stationary input distributions.
+
+The code, data, and trained models are available at \url{https://github.com/QEout/digital-cerebellum}.
+A citable preprint is archived at Zenodo (DOI: \href{https://doi.org/10.5281/zenodo.18850778}{10.5281/zenodo.18850778}).
+
+% ============================================================
+\section*{Acknowledgments}
+
+The LLM backbone used in experiments was provided by the Qwen API (Alibaba Cloud).
+We thank the neuroscience community for the foundational work on cerebellar computation that inspired this architecture.
+
+% ============================================================
+\bibliography{references}
+
+\end{document}

@@ -149,7 +149,9 @@ class TestErrorComparator:
 
     def test_reward_error(self):
         comp = ErrorComparator()
-        err = comp.compute_reward_error(-1.0, "evt-1")
+        err = comp.compute_reward_error(
+            expected_reward=0.0, actual_reward=-1.0, event_id="evt-1",
+        )
         assert err.error_type == ErrorType.REWARD
         assert err.value == -1.0
 
@@ -198,7 +200,7 @@ class TestDecisionRouter:
         # Positive RPE → threshold should decrease
         comp = ErrorComparator()
         for _ in range(10):
-            err = comp.compute_reward_error(1.0)
+            err = comp.compute_reward_error(expected_reward=0.0, actual_reward=1.0)
             router.update_from_reward(err)
         assert router.threshold_high < 0.90
 

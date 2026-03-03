@@ -1,5 +1,8 @@
 # Digital Cerebellum 数字小脑
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18850778.svg)](https://doi.org/10.5281/zenodo.18850778)
+[![PyPI](https://img.shields.io/pypi/v/digital-cerebellum)](https://pypi.org/project/digital-cerebellum/)
+
 A cerebellar-inspired prediction-correction engine for LLM Agents.
 
 一个受生物小脑启发的轻量级预测-校正系统，作为大语言模型的"另一半大脑"。
@@ -172,9 +175,11 @@ MIT
 If you use this work in research:
 
 ```bibtex
-@software{digital_cerebellum_2026,
-  title={Digital Cerebellum: A Cerebellar-Inspired Prediction-Correction Engine for LLM Agents},
+@article{cao2026digital,
+  title={Digital Cerebellum: A Neuroscience-Inspired Online Learning Architecture for Safe and Efficient AI Agent Decision-Making},
+  author={Cao, Weili},
   year={2026},
-  url={https://github.com/QEout/digital-cerebellum}
+  doi={10.5281/zenodo.18850778},
+  url={https://doi.org/10.5281/zenodo.18850778}
 }
 ```

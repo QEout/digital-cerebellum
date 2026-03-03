@@ -195,10 +195,14 @@ class DigitalCerebellum:
             task_lr=self.cfg.task_lr,
         )
 
-        # ⑦ Fluid memory
+        # ⑦ Fluid memory + sleep cycle
         self.memory = FluidMemory()
+        self._sleep_cycle: _SleepCycle | None = None
 
-        # ⑧ Cortex interface (lazy)
+        # ⑧ Task consolidation pipeline
+        self._consolidation: _ConsolidationPipeline | None = None
+
+        # ⑨ Cortex interface (lazy)
         self._cortex = None
 
         # Microzone registry
@@ -208,6 +212,27 @@ class DigitalCerebellum:
         self._pending: dict[str, dict] = {}
         self._history: list[dict] = []
         self._step = 0
+
+    # ==================================================================
+    # Lazy-init Phase 1 components
+    # ==================================================================
+    @property
+    def sleep_cycle(self):
+        if self._sleep_cycle is None:
+            from digital_cerebellum.memory.sleep_cycle import SleepCycle as _SC
+            self._sleep_cycle = _SC()
+        return self._sleep_cycle
+
+    @property
+    def consolidation(self):
+        if self._consolidation is None:
+            from digital_cerebellum.cortex.consolidation import ConsolidationPipeline as _CP
+            self._consolidation = _CP()
+        return self._consolidation
+
+    def sleep(self):
+        """Run one sleep cycle (offline memory maintenance)."""
+        return self.sleep_cycle.run(self.memory)
 
     # ==================================================================
     # Microzone registration
@@ -360,8 +385,9 @@ class DigitalCerebellum:
         ctx = self._pending.pop(event_id, None)
         if ctx is None:
             return
-        rpe_value = 1.0 if success else -1.0
-        rpe = self.comparator.compute_reward_error(rpe_value, event_id)
+        actual = 1.0 if success else -1.0
+        expected = ctx.get("confidence", 0.5) if isinstance(ctx, dict) else 0.5
+        rpe = self.comparator.compute_reward_error(expected, actual, event_id)
         self.router.update_from_reward(rpe)
 
     # ==================================================================

@@ -1,0 +1,57 @@
+% Table 1: Main System Results (500 samples)
+\begin{table}[h]
+\centering
+\caption{Main evaluation results on ToolCallBench-500.}
+\label{tab:main_results}
+\begin{tabular}{lc}
+\toprule
+Metric & Value \\
+\midrule
+Accuracy & 98.2% \\
+Precision & 97.4% \\
+Recall & 100.0% \\
+F1 Score & 0.987 \\
+\midrule
+Fast-path ratio & 56.8% \\
+Fast-path accuracy & 98.2% \\
+Avg fast latency & 10.3ms \\
+Avg slow latency & 1501.0ms \\
+Speedup & 146.2$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Table 2: Ablation Study
+\begin{table}[h]
+\centering
+\caption{Ablation study: contribution of each biologically-inspired component.}
+\label{tab:ablation}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & Acc. & F1 & Fast\% & FastAcc & Speedup \\
+\midrule
+Full system & 99.3% & 0.995 & 53.0% & 100.0% & 159.2$\times$ \\
+w/o Dendritic Mask & 98.3% & 0.988 & 59.3% & 98.3% & 156.9$\times$ \\
+w/o Experience Replay & 92.0% & 0.945 & 60.0% & 87.8% & 139.1$\times$ \\
+w/o EWC & 95.3% & 0.967 & 60.0% & 93.3% & 193.4$\times$ \\
+Single Head (K=1) & 99.0% & 0.993 & 0.0% & 0.0% & 0.0$\times$ \\
+w/o Task Heads & 99.3% & 0.995 & 53.3% & 100.0% & 173.9$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% Table 3: Baseline Comparison
+\begin{table}[h]
+\centering
+\caption{Comparison with baseline approaches.}
+\label{tab:baseline}
+\begin{tabular}{lcccc}
+\toprule
+Approach & Accuracy & F1 & Speedup & Avg Latency \\
+\midrule
+Pure LLM & 92.0% & 0.945 & 158.9$\times$ & 635ms \\
+LLM (no learning) & 99.0% & 0.993 & 0.0$\times$ & 1517ms \\
+Digital Cerebellum & 98.5% & 0.989 & 142.8$\times$ & 893ms \\
+\bottomrule
+\end{tabular}
+\end{table}
