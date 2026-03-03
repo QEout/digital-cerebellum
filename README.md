@@ -59,7 +59,7 @@ Full scientific audit with honest limitations: [`docs/architecture.md`](docs/arc
 
 ```bash
 # Clone
-git clone https://github.com/YOUR_USERNAME/digital-cerebellum.git
+git clone https://github.com/QEout/digital-cerebellum.git
 cd digital-cerebellum
 
 # Install
@@ -135,6 +135,6 @@ If you use this work in research:
 @software{digital_cerebellum_2026,
   title={Digital Cerebellum: A Cerebellar-Inspired Prediction-Correction Engine for LLM Agents},
   year={2026},
-  url={https://github.com/YOUR_USERNAME/digital-cerebellum}
+  url={https://github.com/QEout/digital-cerebellum}
 }
 ```
