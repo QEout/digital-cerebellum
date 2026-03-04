@@ -216,6 +216,40 @@ class CuriosityDrive:
         ranking.sort(key=lambda x: x[1], reverse=True)
         return ranking
 
+    def get_exploration_requests(self) -> list[dict[str, Any]]:
+        """
+        Generate active exploration requests.
+
+        Instead of passively reporting curiosity, this method produces
+        actionable requests that the brain can act on: "Try domain X
+        with pattern Y to learn faster."
+
+        Biological basis: dopaminergic signals don't just report novelty,
+        they DRIVE exploratory behavior.
+        """
+        requests = []
+        for domain, tracker in self._trackers.items():
+            lp = tracker.learning_progress
+            err = tracker.mean_error
+
+            if lp > self._explore_threshold and err > 0.1:
+                requests.append({
+                    "domain": domain,
+                    "action": "explore",
+                    "urgency": float(lp * err),
+                    "reason": f"Active learning: progress={lp:.3f}, error={err:.3f}",
+                })
+            elif err > 0.4 and tracker.observation_count < 20:
+                requests.append({
+                    "domain": domain,
+                    "action": "practice",
+                    "urgency": float(err * 0.5),
+                    "reason": f"Needs practice: error={err:.3f}, observations={tracker.observation_count}",
+                })
+
+        requests.sort(key=lambda r: r["urgency"], reverse=True)
+        return requests
+
     @property
     def stats(self) -> dict[str, Any]:
         result: dict[str, Any] = {}

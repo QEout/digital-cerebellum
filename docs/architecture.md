@@ -1464,3 +1464,181 @@
   如果 Q1-Q4 全部为"是" → 核心假设验证通过，继续 Phase 1
   如果任何一个为"否" → 分析原因，调整设计或诚实缩小 claim
 ```
+
+---
+
+## Phase 4-6 架构扩展（2026-03-04 补充）
+
+> 以下内容记录 Phase 4（技能习得）、Phase 5（通用微区）、Phase 6（微操引擎）的架构设计。
+> 所有 Phase 均已实现并通过测试（225 tests passing）。
+
+### Phase 4：技能习得与自主执行
+
+**核心洞察**：小脑不只是"判断安全不安全"，它要能**替代 LLM 直接执行**已学会的技能。
+
+```
+生物学映射：
+  程序性记忆（小脑 → 深部核团）
+  → 反复练习某个动作后，小脑能直接执行，不再需要皮层参与
+  → 骑自行车、打字、弹钢琴——你不需要"想"怎么做
+
+数字实现：
+  SkillStore（程序性记忆）
+  → 每次 LLM 回答后，小脑将 (输入模式 → 响应/动作) 存为技能
+  → 下次遇到相似输入，直接从技能库检索并执行
+  → 成功的技能被强化，失败的技能被消退
+  → 睡眠周期合并相似技能、淘汰弱技能
+```
+
+**架构**：
+
+```
+用户输入
+    │
+    ▼
+  SkillStore.match(embedding)
+    │
+    ├─ 命中 (similarity > 0.85, confidence > 0.4)
+    │    → 直接执行技能（文本回复 或 工具调用序列重放）
+    │    → 不调 LLM，延迟 < 10ms
+    │
+    └─ 未命中
+         → 调 LLM（慢路径）
+         → 将 LLM 的响应学习为新技能
+         → skill_feedback(success/fail) 驱动强化/消退
+```
+
+**关键参数**：
+- `SIMILARITY_THRESHOLD = 0.85` — 匹配阈值
+- `MIN_CONFIDENCE = 0.4` — 最低执行置信度
+- `REINFORCEMENT_RATE = 0.1` — 成功后置信度增长率
+- `EXTINCTION_RATE = 0.15` — 失败后置信度衰减率
+
+**验证结果**：20 次交互后 25% 自动化率（Demo 验证）。
+
+### Phase 5：通用微区框架
+
+**核心洞察**：生物小脑的微区是**基因决定**的（不是经验涌现），但微区内部的突触权重通过经验特化。
+
+```
+生物学：
+  小脑有 ~5000 个微区，每个处理特定的感觉-运动回路
+  微区的存在由基因编程（跨个体一致、跨物种保守）
+  微区的内部连接通过经验学习
+
+数字实现：
+  预定义 6 个通用微区（覆盖 Agent 主要操作领域）
+  每个微区共享同一个小脑引擎（RFF → K-head → Router）
+  通过经验特化各自的预测精度
+```
+
+**6 个预定义微区**：
+
+| 微区 | 域 | TaskHead | 快路径检测 |
+|------|-----|----------|-----------|
+| ToolCallMicrozone | tool_call | safety | — |
+| PaymentMicrozone | payment | payment_risk | 金额 > $10k |
+| ShellCommandMicrozone | shell_command | shell_safety, shell_destructive | rm -rf, sudo, chmod 777 等 |
+| FileOperationMicrozone | file_operation | file_safety, file_sensitivity | /etc/passwd, .env 等敏感路径 |
+| APICallMicrozone | api_call | api_safety, api_data_leak_risk | DELETE 方法, Authorization 头 |
+| ResponsePredictionMicrozone | response_prediction | response_predictability, response_complexity | 查询类型判断 |
+
+### Phase 6：微操引擎（Micro-Operation Engine）
+
+**核心洞察**：生物小脑的**本职工作**是连续运动控制（200Hz），不是认知判断。
+Phase 0-5 实现了小脑的认知功能，Phase 6 实现了小脑的运动控制功能。
+
+```
+生物学映射：
+
+  运动皮层 → "我要拿杯子"（意图）
+       │
+  小脑接收传出副本 → 前向模型预测"手会移动到哪里"
+       │
+  感觉反馈 → 实际位置
+       │
+  SPE = 预测 - 实际 → 误差信号
+       │
+  攀爬纤维 → 在线调整前向模型
+       │
+  循环 (200Hz): observe → predict → act → compare → learn
+```
+
+**架构**：
+
+```
+环境 (60Hz+)
+    │ state (numeric vector)
+    ▼
+┌─ MicroOpEngine ───────────────────────────────────────┐
+│                                                         │
+│  StateEncoder                                           │
+│    数值状态 → 归一化向量                                   │
+│    Welford 在线均值/方差（无需完整数据集）                   │
+│    直接模式 (<0.1ms) 或 投影模式 (<0.5ms)                  │
+│       │                                                 │
+│  PatternSeparator (复用 Phase 0 的 RFF 层)               │
+│    低维状态 → 高维稀疏编码                                 │
+│       │                                                 │
+│  ActionNet (浅层 MLP + Tanh)                             │
+│    稀疏编码 → 动作向量 ∈ [-1, 1]^action_dim               │
+│       │                                                 │
+│  ForwardModel (残差 MLP)                                 │
+│    (state, action) → Δstate                             │
+│    predicted_next = state + Δstate                       │
+│       │                                                 │
+│  ActionEncoder                                          │
+│    归一化 ↔ 原始动作空间                                   │
+│       │                                                 │
+│  在线学习                                                │
+│    ForwardModel.learn(state, action, actual_next)        │
+│    ActionNet 策略梯度 (reward × SPE modulation)           │
+│                                                         │
+└─────────────────────────────────────────────────────────┘
+    │ action
+    ▼
+环境.execute(action) → reward
+```
+
+**关键设计决策**：
+
+1. **残差预测**：ForwardModel 预测 Δstate 而非绝对 next_state，学习更容易
+2. **SPE 调制学习率**：预测误差大时学得更快（匹配攀爬纤维的 burst firing）
+3. **浅层前馈网络**：不用 RNN/Transformer，匹配生物小脑的前馈架构
+4. **梯度裁剪**：`clip_grad_norm_(1.0)` 防止不稳定
+
+**验证结果**：
+
+| 指标 | 目标 | 实际 |
+|------|------|------|
+| 运行频率 | 60Hz | 285Hz |
+| 单步延迟 | <16ms | 3.5ms |
+| 前向模型学习 | SPE 下降 | SPE ↓99% |
+| LLM 调用 | 零 | 零 |
+
+### 统一架构：DigitalBrain 双模式
+
+Phase 6 完成后，`DigitalBrain` 支持两种操作模式：
+
+```
+DigitalBrain
+    │
+    ├─ brain.think(text)     → 文本模式（Phase 0-5）
+    │    SkillStore → match? → 执行/LLM
+    │    输入: 自然语言
+    │    输出: 文本 + 工具调用
+    │    延迟: 10ms (fast) / 1-5s (slow)
+    │
+    └─ brain.control(env)    → 控制模式（Phase 6）
+         MicroOpEngine → observe → predict → act → learn
+         输入: 数值状态向量 (60Hz+)
+         输出: 连续动作向量
+         延迟: 3.5ms/step
+```
+
+两种模式共享相同的小脑原理（RFF 模式分离、误差驱动学习、在线适应），
+但在不同时间尺度和输入模态上运行。
+
+**这就是"给 LLM 一个身体"的完整含义：**
+- `think()` = 小脑的认知功能（预测、判断、技能执行）
+- `control()` = 小脑的运动功能（连续控制、精密操作、实时学习）

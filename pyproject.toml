@@ -1,7 +1,7 @@
 [project]
 name = "digital-cerebellum"
-version = "0.2.0"
-description = "A cerebellar-inspired prediction-correction engine for LLM Agents"
+version = "0.3.0"
+description = "A cerebellar-inspired cognitive architecture — skill learning, real-time micro-operations, and autonomous control for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -11,6 +11,7 @@ authors = [
 keywords = [
     "cerebellum", "llm", "agent", "prediction", "neuroscience",
     "online-learning", "safety", "tool-call", "ai-agent",
+    "micro-operations", "forward-model", "real-time-control",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",

@@ -1257,6 +1257,26 @@ Phase 0 的目标是用最少的代码验证核心假设：
   │       ├── somatic_marker.py        # ⑫A 躯体标记 / 直觉
   │       ├── curiosity_drive.py       # ⑫B 好奇心驱动
   │       └── self_model.py            # ⑫C 自我模型 / 元认知
+  ├── memory/
+  │   ├── fluid_memory.py              # 流体记忆 (感知→短期→长期)
+  │   ├── skill_store.py               # ⑬ Phase 4: 程序性记忆 (SkillStore)
+  │   └── sleep_cycle.py               # 睡眠巩固
+  ├── microzones/
+  │   ├── __init__.py                  # ALL_MICROZONES 导出
+  │   ├── tool_call.py                 # ToolCallMicrozone
+  │   ├── payment.py                   # PaymentMicrozone
+  │   ├── shell_command.py             # ⑭ Phase 5: ShellCommandMicrozone
+  │   ├── file_operation.py            # ⑭ Phase 5: FileOperationMicrozone
+  │   ├── api_call.py                  # ⑭ Phase 5: APICallMicrozone
+  │   └── response_prediction.py       # ⑭ Phase 5: ResponsePredictionMicrozone
+  ├── micro_ops/
+  │   ├── __init__.py                  # MicroOpEngine 导出
+  │   ├── engine.py                    # ⑮ Phase 6: MicroOpEngine (连续控制循环)
+  │   └── environments.py              # ⑮ Phase 6: TargetTracker, BalanceBeam
+  ├── core/
+  │   ├── state_encoder.py             # ⑯ Phase 6: StateEncoder (数值状态编码)
+  │   ├── forward_model.py             # ⑯ Phase 6: ForwardModel (前向模型)
+  │   └── action_encoder.py            # ⑯ Phase 6: ActionEncoder (动作空间编码)
   ├── benchmarks/
   │   ├── dataset.py                   # 统一数据集格式
   │   ├── sequential_dataset.py        # 时序场景数据集
@@ -1270,12 +1290,20 @@ Phase 0 的目标是用最少的代码验证核心假设：
   │   ├── langchain_guard.py           # LangChain 工具守卫示例
   │   ├── multi_microzone.py           # 多微区示例
   │   └── brain_demo.py                # DigitalBrain 完整演示
+  ├── examples/
+  │   ├── skill_acquisition_demo.py    # Phase 4 技能习得演示
+  │   └── micro_ops_demo.py            # Phase 6 微操引擎演示
   ├── tests/
   │   ├── test_core.py                 # 核心组件测试 (23)
   │   ├── test_microzones.py           # 微区测试 (15)
+  │   ├── test_new_microzones.py       # Phase 5 微区测试 (33)
   │   ├── test_phase1.py               # Phase 1 测试 (17)
   │   ├── test_phase2.py               # Phase 2 测试 (18)
-  │   └── test_phase3.py               # Phase 3 测试 (33)
+  │   ├── test_phase3.py               # Phase 3 测试 (33)
+  │   ├── test_skill_store.py          # Phase 4 技能库测试 (26)
+  │   ├── test_temporal_detector.py    # 时序检测器测试 (11)
+  │   ├── test_mcp_server.py           # MCP Server 测试 (12)
+  │   └── test_micro_ops.py            # Phase 6 微操测试 (34)
   ├── paper/
   │   ├── main.tex                     # 论文 LaTeX 源码
   │   └── references.bib               # 参考文献

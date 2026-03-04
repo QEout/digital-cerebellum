@@ -291,10 +291,14 @@ class DigitalCerebellum:
         self.memory = FluidMemory()
         self._sleep_cycle: _SleepCycle | None = None
 
-        # ⑧ Task consolidation pipeline
+        # ⑧ Skill store (procedural memory for learned skills)
+        from digital_cerebellum.memory.skill_store import SkillStore
+        self.skill_store = SkillStore()
+
+        # ⑨ Task consolidation pipeline
         self._consolidation: _ConsolidationPipeline | None = None
 
-        # ⑨ Cortex interface (lazy)
+        # ⑩ Cortex interface (lazy)
         self._cortex = None
 
         # Microzone registry
@@ -323,8 +327,42 @@ class DigitalCerebellum:
         return self._consolidation
 
     def sleep(self):
-        """Run one sleep cycle (offline memory maintenance)."""
-        return self.sleep_cycle.run(self.memory)
+        """Run one sleep cycle (offline memory maintenance + skill consolidation)."""
+        report = self.sleep_cycle.run(self.memory)
+        skill_result = self.skill_store.consolidate()
+        report.skill_consolidation = skill_result
+        return report
+
+    # ==================================================================
+    # Skill matching (procedural memory)
+    # ==================================================================
+    def match_skill(self, text: str) -> "SkillMatch | None":
+        """
+        Check if the skill store has a matching skill for this input.
+
+        Uses the shared encoder to embed the text, then queries the
+        skill store for the most similar learned pattern.
+        """
+        from digital_cerebellum.memory.skill_store import SkillMatch
+        feature_vec = self.encoder.encode_text(text)
+        return self.skill_store.match(feature_vec)
+
+    def learn_skill(
+        self,
+        input_text: str,
+        response_text: str,
+        tool_calls: list[dict] | None = None,
+        domain: str = "",
+    ) -> str:
+        """Learn a new skill from an LLM interaction."""
+        feature_vec = self.encoder.encode_text(input_text)
+        return self.skill_store.learn_from_interaction(
+            input_embedding=feature_vec,
+            input_text=input_text,
+            response_text=response_text,
+            tool_calls=tool_calls,
+            domain=domain,
+        )
 
     # ==================================================================
     # Microzone registration
@@ -750,6 +788,7 @@ class DigitalCerebellum:
             "router": self.router.stats,
             "memory": self.memory.stats,
         }
+        result["skill_store"] = self.skill_store.stats
         if self._temporal_detector is not None:
             result["temporal_detector"] = self._temporal_detector.stats
         if self._somatic_marker is not None:

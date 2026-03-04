@@ -22,8 +22,7 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from digital_cerebellum.main import CerebellumConfig, DigitalCerebellum
-from digital_cerebellum.microzones.tool_call import ToolCallMicrozone
-from digital_cerebellum.microzones.payment import PaymentMicrozone
+from digital_cerebellum.microzones import ALL_MICROZONES
 
 log = logging.getLogger(__name__)
 
@@ -31,8 +30,9 @@ mcp = FastMCP(
     "Digital Cerebellum",
     instructions=(
         "A neuroscience-inspired prediction-correction engine for AI agents. "
-        "Evaluates tool calls for safety, assesses payment risk, provides "
-        "metacognitive self-reports, and learns online from feedback."
+        "Evaluates tool calls, shell commands, file operations, and API calls "
+        "for safety. Learns skills from interactions and executes them directly. "
+        "Provides metacognitive self-reports and curiosity-driven exploration."
     ),
 )
 
@@ -53,8 +53,8 @@ def _get_cerebellum() -> DigitalCerebellum:
         cfg.enable_self_model = True
 
         _cb = DigitalCerebellum(cfg)
-        _cb.register_microzone(ToolCallMicrozone())
-        _cb.register_microzone(PaymentMicrozone())
+        for mz_cls in ALL_MICROZONES:
+            _cb.register_microzone(mz_cls())
         log.info("Digital Cerebellum initialized with microzones: %s",
                  list(_cb._microzones.keys()))
     return _cb
@@ -126,6 +126,178 @@ def evaluate_payment(
         "method": method,
     }, context=context)
     return _sanitize(result)
+
+
+@mcp.tool()
+def evaluate_shell_command(
+    command: str,
+    shell: str = "bash",
+    working_dir: str = "",
+    context: str = "",
+) -> dict[str, Any]:
+    """
+    Evaluate a shell command for safety before execution.
+
+    Detects destructive operations (rm -rf, DROP TABLE), privilege
+    escalation (sudo), data exfiltration, and other risky patterns.
+
+    Args:
+        command: The shell command to evaluate (e.g., "rm -rf /tmp/build")
+        shell: Shell type (e.g., "bash", "powershell")
+        working_dir: Current working directory
+        context: Optional conversation context
+
+    Returns:
+        Safety assessment with risk type, severity, and confidence.
+    """
+    cb = _get_cerebellum()
+    result = cb.evaluate("shell_command", {
+        "command": command,
+        "shell": shell,
+        "working_dir": working_dir,
+    }, context=context)
+    return _sanitize(result)
+
+
+@mcp.tool()
+def evaluate_file_operation(
+    operation: str,
+    path: str,
+    content_preview: str = "",
+    context: str = "",
+) -> dict[str, Any]:
+    """
+    Evaluate a file operation for safety.
+
+    Detects sensitive path access (credentials, system files),
+    destructive operations (delete, overwrite), and data exposure risks.
+
+    Args:
+        operation: Type of operation (e.g., "read", "write", "delete", "chmod")
+        path: File path being operated on
+        content_preview: Optional preview of content being written
+        context: Optional conversation context
+
+    Returns:
+        Safety assessment with sensitivity score and confidence.
+    """
+    cb = _get_cerebellum()
+    result = cb.evaluate("file_operation", {
+        "operation": operation,
+        "path": path,
+        "content_preview": content_preview,
+    }, context=context)
+    return _sanitize(result)
+
+
+@mcp.tool()
+def evaluate_api_call(
+    method: str,
+    url: str,
+    body_preview: str = "",
+    context: str = "",
+) -> dict[str, Any]:
+    """
+    Evaluate an external API call for safety.
+
+    Detects data leakage, authentication abuse, destructive endpoints,
+    and suspicious domains.
+
+    Args:
+        method: HTTP method (e.g., "GET", "POST", "DELETE")
+        url: Target URL
+        body_preview: Optional preview of request body
+        context: Optional conversation context
+
+    Returns:
+        Safety assessment with data leak risk score and confidence.
+    """
+    cb = _get_cerebellum()
+    result = cb.evaluate("api_call", {
+        "method": method,
+        "url": url,
+        "body_preview": body_preview,
+    }, context=context)
+    return _sanitize(result)
+
+
+@mcp.tool()
+def learn_skill(
+    input_text: str,
+    response_text: str,
+    domain: str = "response",
+) -> dict[str, str]:
+    """
+    Teach the cerebellum a new skill from an interaction.
+
+    After the LLM produces a response, store it as a learnable skill.
+    Next time a similar query arrives, the cerebellum can respond directly
+    without calling the LLM.
+
+    Args:
+        input_text: The query/input that triggered the response
+        response_text: The response that was produced
+        domain: Skill domain (default: "response")
+
+    Returns:
+        The skill_id for future reference.
+    """
+    cb = _get_cerebellum()
+    skill_id = cb.learn_skill(input_text, response_text, domain=domain)
+    return {"status": "ok", "skill_id": skill_id}
+
+
+@mcp.tool()
+def match_skill(query: str) -> dict[str, Any]:
+    """
+    Check if the cerebellum has learned a skill for this query.
+
+    If a matching skill exists with high enough confidence, the
+    cerebellum can respond directly without calling the LLM.
+
+    Args:
+        query: The input text to match against learned skills
+
+    Returns:
+        Skill match result with similarity, confidence, and the stored response.
+        Returns {"matched": false} if no skill matches.
+    """
+    cb = _get_cerebellum()
+    result = cb.match_skill(query)
+    if result is None:
+        return {"matched": False}
+    return _sanitize({
+        "matched": True,
+        "similarity": result.similarity,
+        "match_confidence": result.match_confidence,
+        "should_execute": result.should_execute,
+        "response_text": result.skill.response_text,
+        "skill_id": result.skill.id,
+        "domain": result.skill.domain,
+    })
+
+
+@mcp.tool()
+def skill_feedback(skill_id: str, success: bool) -> dict[str, str]:
+    """
+    Provide feedback on a skill execution.
+
+    Reinforces successful skills (making them more likely to be used)
+    and weakens failed skills (reducing their confidence).
+
+    Args:
+        skill_id: The skill_id from a match_skill or learn_skill result
+        success: Whether the skill execution was successful
+
+    Returns:
+        Confirmation message.
+    """
+    cb = _get_cerebellum()
+    if success:
+        cb.skill_store.reinforce(skill_id)
+    else:
+        cb.skill_store.weaken(skill_id)
+    return {"status": "ok", "message": f"Skill {'reinforced' if success else 'weakened'}"}
 
 
 @mcp.tool()
@@ -231,11 +403,14 @@ def cerebellum_status() -> str:
     """Current status of the Digital Cerebellum."""
     cb = _get_cerebellum()
     stats = cb.stats
+    skill_stats = stats.get("skill_store", {})
     lines = [
         "Digital Cerebellum Status",
         f"  Step: {stats['step']}",
         f"  Microzones: {', '.join(stats['microzones'])}",
         f"  Routes: {stats['routes']}",
+        f"  Skills learned: {skill_stats.get('total', 0)}",
+        f"  Avg skill confidence: {skill_stats.get('avg_confidence', 0):.3f}",
     ]
     if "somatic_marker" in stats:
         lines.append(f"  Somatic markers: {stats['somatic_marker']['count']}")

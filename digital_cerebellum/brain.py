@@ -1,50 +1,44 @@
 """
 Digital Brain — complete cognitive architecture.
 
-Instead of being a middleware inside an agent framework, the Digital Brain
-IS the agent.  The LLM serves as the cerebral cortex (slow, flexible
-reasoning) and the cerebellum handles fast-path predictions.
+The Digital Brain unifies two modes of operation:
+
+1. **Text mode** (think) — LLM cortex + cerebellum skill store
+   Request-response: user text → skill match or LLM reasoning → response
+
+2. **Control mode** (control) — micro-operation engine
+   Continuous loop: observe → predict → act → learn at 285Hz+
+
+Both share the same cerebellar principles (RFF pattern separation,
+forward models, error-driven learning) but operate at different
+timescales and on different input modalities.
 
 Architecture::
 
-    User Input
-        │
-        ▼
-    ┌─ Cerebellum (fast path, < 50ms) ──────────────────────┐
-    │                                                         │
-    │  "Have I seen this pattern before?"                     │
-    │                                                         │
-    │  YES (high confidence)  →  Respond directly             │
-    │  NO  (low confidence)   →  Escalate to Cortex (LLM)    │
-    │                                                         │
-    │  ◄── Learn from every Cortex response ──►               │
-    └─────────────────────────────────────────────────────────┘
-        │
-        ▼
-    ┌─ Cortex / LLM (slow path, 1-5s) ─────────────────────┐
-    │                                                         │
-    │  Full reasoning with tool definitions                   │
-    │  Returns: text response + optional tool calls           │
-    │                                                         │
-    └─────────────────────────────────────────────────────────┘
-        │
-        ▼
-    ┌─ Tool Executor ───────────────────────────────────────┐
-    │                                                         │
-    │  Built-in tool registry.  No LangChain needed.          │
-    │  Each tool call is pre-evaluated by the cerebellum.     │
-    │                                                         │
-    └─────────────────────────────────────────────────────────┘
+    User Input (text)          Environment (numeric, 60Hz+)
+        │                              │
+        ▼                              ▼
+    ┌─ Text Path ──────┐      ┌─ Control Path ──────────┐
+    │                    │      │                          │
+    │  Skill Store       │      │  StateEncoder            │
+    │  → match?          │      │  PatternSeparator (RFF)  │
+    │  YES → replay      │      │  ForwardModel            │
+    │  NO  → LLM → learn │      │  ActionNet → act         │
+    │                    │      │  SPE → online learn       │
+    └────────────────────┘      └──────────────────────────┘
 
 Usage::
 
     from digital_cerebellum.brain import DigitalBrain
 
+    # Text mode
     brain = DigitalBrain.from_yaml()
-    brain.register_tool("search_web", search_fn, "Search the internet")
+    r = brain.think("What's the weather in Tokyo?")
 
-    response = brain.think("What's the weather in Tokyo?")
-    print(response.text)
+    # Control mode
+    from digital_cerebellum.micro_ops.environments import TargetTracker
+    env = TargetTracker()
+    summary = brain.control(env, n_steps=500)
 """
 
 from __future__ import annotations
@@ -57,6 +51,7 @@ from typing import Any, Callable
 
 from digital_cerebellum.main import CerebellumConfig, DigitalCerebellum
 from digital_cerebellum.microzones.tool_call import ToolCallMicrozone
+from digital_cerebellum.micro_ops.engine import MicroOpEngine, MicroOpConfig, Environment
 
 log = logging.getLogger(__name__)
 
@@ -97,27 +92,11 @@ class ThinkResult:
     latency_ms: float = 0.0
     confidence: float = 0.0
     llm_called: bool = True
+    skill_id: str | None = None
 
     @property
     def used_fast_path(self) -> bool:
         return self.path == "cerebellum"
-
-
-# ======================================================================
-# Response Microzone — learns to predict LLM responses
-# ======================================================================
-
-class _ResponseMicrozone:
-    """
-    Internal microzone that learns to predict whether the cerebellum
-    can handle a query pattern without calling the LLM.
-
-    This isn't a safety check — it's a familiarity check.
-    """
-
-    @property
-    def name(self):
-        return "response_familiarity"
 
 
 # ======================================================================
@@ -129,7 +108,8 @@ class DigitalBrain:
     Complete cognitive architecture: LLM cortex + digital cerebellum.
 
     The cerebellum learns from every LLM interaction and progressively
-    handles more patterns on the fast path.
+    handles more patterns on the fast path — not just evaluating safety,
+    but actually EXECUTING learned skills.
     """
 
     def __init__(self, cfg: CerebellumConfig | None = None):
@@ -148,8 +128,11 @@ class DigitalBrain:
             "total_queries": 0,
             "fast_path": 0,
             "slow_path": 0,
+            "skill_hits": 0,
+            "skill_misses": 0,
             "tools_executed": 0,
             "tools_blocked": 0,
+            "tools_replayed": 0,
         }
 
     @classmethod
@@ -192,16 +175,104 @@ class DigitalBrain:
         """
         Process a user input through the full cognitive loop.
 
-        1. Cerebellum checks if this is a familiar pattern
-        2. If uncertain → call LLM (cortex)
-        3. If LLM wants tool calls → pre-evaluate with cerebellum → execute
-        4. Learn from the entire interaction
+        Stage 1: Check skill store — can the cerebellum handle this alone?
+        Stage 2: If not → call LLM (cortex)
+        Stage 3: If LLM wants tool calls → pre-evaluate → execute
+        Stage 4: Learn the interaction as a new skill
         """
         t0 = time.perf_counter()
         self._stats["total_queries"] += 1
-
         self._conversation.append({"role": "user", "content": user_input})
 
+        # ── Stage 1: Skill matching (cerebellum fast path) ──
+        skill_match = self.cerebellum.match_skill(user_input)
+
+        if skill_match is not None and skill_match.should_execute:
+            result = self._execute_skill(user_input, skill_match, t0)
+            if result is not None:
+                return result
+
+        # ── Stage 2-3: Cortex slow path ──
+        self._stats["skill_misses"] += 1
+        return self._cortex_path(user_input, max_tool_rounds, t0)
+
+    def _execute_skill(
+        self,
+        user_input: str,
+        skill_match: Any,
+        t0: float,
+    ) -> ThinkResult | None:
+        """
+        Execute a matched skill from procedural memory.
+
+        If the skill has tool calls, replay them.
+        If it's a direct response, return it immediately.
+        """
+        skill = skill_match.skill
+        all_tool_calls = []
+        all_tool_results = []
+
+        if skill.tool_calls:
+            for tc_record in skill.tool_calls:
+                tool_name = tc_record.get("tool", tc_record.get("name", ""))
+                tool_params = tc_record.get("params", tc_record.get("arguments", {}))
+
+                if tool_name not in self._tools:
+                    log.warning("Skill references unregistered tool '%s', falling back to cortex", tool_name)
+                    return None
+
+                eval_result = self.cerebellum.evaluate("tool_call", {
+                    "tool_name": tool_name,
+                    "tool_params": tool_params,
+                }, context=user_input)
+
+                if not eval_result.get("safe", True):
+                    log.warning("Skill tool call '%s' blocked by safety, falling back to cortex", tool_name)
+                    return None
+
+                try:
+                    result = self._tools[tool_name].fn(**tool_params)
+                    all_tool_calls.append({
+                        "tool": tool_name, "params": tool_params,
+                        "result": result, "status": "replayed",
+                    })
+                    all_tool_results.append({"tool": tool_name, "result": result})
+                    self._stats["tools_replayed"] += 1
+                except Exception as e:
+                    log.warning("Skill tool replay failed: %s, falling back to cortex", e)
+                    return None
+
+        text = skill.response_text
+        self._conversation.append({"role": "assistant", "content": text})
+
+        self._stats["fast_path"] += 1
+        self._stats["skill_hits"] += 1
+        skill.access_count += 1
+
+        log.info(
+            "SKILL HIT: similarity=%.3f confidence=%.3f skill_id=%s tools=%d",
+            skill_match.similarity, skill_match.match_confidence,
+            skill.id[:8], len(skill.tool_calls),
+        )
+
+        return ThinkResult(
+            text=text,
+            tool_calls=all_tool_calls,
+            tool_results=all_tool_results,
+            path="cerebellum",
+            latency_ms=(time.perf_counter() - t0) * 1000,
+            confidence=skill_match.match_confidence,
+            llm_called=False,
+            skill_id=skill.id,
+        )
+
+    def _cortex_path(
+        self,
+        user_input: str,
+        max_tool_rounds: int,
+        t0: float,
+    ) -> ThinkResult:
+        """Full LLM reasoning path. Learns a skill from the interaction."""
         cortex = self._get_cortex()
         tool_specs = [t.to_openai_spec() for t in self._tools.values()] or None
 
@@ -234,6 +305,13 @@ class DigitalBrain:
                 self._conversation.append({"role": "assistant", "content": text})
                 self._stats["slow_path"] += 1
 
+                skill_id = self.cerebellum.learn_skill(
+                    input_text=user_input,
+                    response_text=text,
+                    tool_calls=all_tool_calls if all_tool_calls else None,
+                    domain="response",
+                )
+
                 return ThinkResult(
                     text=text,
                     tool_calls=all_tool_calls,
@@ -241,6 +319,7 @@ class DigitalBrain:
                     path="cortex",
                     latency_ms=(time.perf_counter() - t0) * 1000,
                     llm_called=True,
+                    skill_id=skill_id,
                 )
 
             messages.append({
@@ -310,6 +389,16 @@ class DigitalBrain:
         text = "I completed the tool operations."
         self._conversation.append({"role": "assistant", "content": text})
 
+        skill_id = self.cerebellum.learn_skill(
+            input_text=user_input,
+            response_text=text,
+            tool_calls=[
+                {"tool": tc["tool"], "params": tc["params"]}
+                for tc in all_tool_calls if tc.get("status") == "executed"
+            ],
+            domain="response",
+        )
+
         return ThinkResult(
             text=text,
             tool_calls=all_tool_calls,
@@ -317,7 +406,49 @@ class DigitalBrain:
             path="cortex",
             latency_ms=(time.perf_counter() - t0) * 1000,
             llm_called=True,
+            skill_id=skill_id,
         )
+
+    # ==================================================================
+    # Skill feedback
+    # ==================================================================
+
+    def skill_feedback(self, result: ThinkResult, success: bool) -> None:
+        """
+        Provide feedback on a brain.think() result.
+
+        Reinforces successful skills, weakens failed ones.
+        This drives the cerebellum's learning: skills that work
+        become more confident and more likely to be used on the fast path.
+        """
+        if result.skill_id is None:
+            return
+        if success:
+            self.cerebellum.skill_store.reinforce(result.skill_id)
+        else:
+            self.cerebellum.skill_store.weaken(result.skill_id)
+
+    # ==================================================================
+    # Active exploration
+    # ==================================================================
+
+    def get_exploration_suggestions(self) -> list[dict[str, Any]]:
+        """
+        Ask the cerebellum what domains are worth exploring.
+
+        Returns domains ranked by learning potential — areas where
+        practice would yield the most improvement.
+        """
+        ranking = self.cerebellum.curiosity_drive.get_exploration_ranking()
+        suggestions = []
+        for domain, score in ranking:
+            if score > 0:
+                suggestions.append({
+                    "domain": domain,
+                    "curiosity_score": round(score, 4),
+                    "recommendation": "explore" if score > 0.1 else "practice",
+                })
+        return suggestions
 
     # ==================================================================
     # Conversation management
@@ -333,12 +464,75 @@ class DigitalBrain:
 
     @property
     def stats(self) -> dict[str, Any]:
+        total = self._stats["total_queries"] or 1
+        engines = getattr(self, "_engines", {})
         return {
             **self._stats,
+            "skill_hit_rate": round(self._stats["skill_hits"] / total, 3),
+            "automation_ratio": round(self._stats["fast_path"] / total, 3),
             "cerebellum": self.cerebellum.stats,
             "tools_registered": list(self._tools.keys()),
             "conversation_length": len(self._conversation),
+            "micro_op_engines": {
+                f"{k[0]}d_state_{k[1]}d_action": v.stats
+                for k, v in engines.items()
+            },
         }
+
+    # ==================================================================
+    # Control mode (Phase 6 — continuous micro-operations)
+    # ==================================================================
+
+    def control(
+        self,
+        env: Environment,
+        n_steps: int | None = None,
+        target_hz: float = 60.0,
+        cfg: MicroOpConfig | None = None,
+    ) -> dict[str, Any]:
+        """
+        Run continuous control on an environment.
+
+        This is the "body" mode — the cerebellum directly controls an
+        environment at 60Hz+, learning from prediction errors, without
+        any LLM involvement.
+
+        Parameters
+        ----------
+        env : Environment with observe() and execute() methods
+        n_steps : number of control steps (default: 10000)
+        target_hz : target loop frequency (default: 60)
+        cfg : optional MicroOpConfig for engine tuning
+
+        Returns
+        -------
+        Summary dict with performance metrics and learning progress.
+        """
+        engine = self._get_or_create_engine(env, cfg)
+        return engine.run(env, n_steps=n_steps, target_hz=target_hz)
+
+    def control_step(self, env: Environment, cfg: MicroOpConfig | None = None):
+        """Execute a single control step. Returns StepResult."""
+        engine = self._get_or_create_engine(env, cfg)
+        return engine.step(env)
+
+    def _get_or_create_engine(
+        self,
+        env: Environment,
+        cfg: MicroOpConfig | None = None,
+    ) -> MicroOpEngine:
+        """Get or create a MicroOpEngine matched to the environment dimensions."""
+        key = (env.state_dim, env.action_dim)
+        if not hasattr(self, "_engines"):
+            self._engines: dict[tuple[int, int], MicroOpEngine] = {}
+
+        if key not in self._engines:
+            self._engines[key] = MicroOpEngine(
+                state_dim=env.state_dim,
+                action_dim=env.action_dim,
+                cfg=cfg or MicroOpConfig(),
+            )
+        return self._engines[key]
 
     # ==================================================================
     # Internal

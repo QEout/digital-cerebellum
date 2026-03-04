@@ -24,9 +24,11 @@ Two ways to use:
 from digital_cerebellum.main import DigitalCerebellum, CerebellumConfig
 from digital_cerebellum.brain import DigitalBrain
 from digital_cerebellum.emergence import SomaticMarker, CuriosityDrive, SelfModel
+from digital_cerebellum.micro_ops import MicroOpEngine, MicroOpConfig
 
 __all__ = [
     "DigitalCerebellum", "CerebellumConfig", "DigitalBrain",
     "SomaticMarker", "CuriosityDrive", "SelfModel",
+    "MicroOpEngine", "MicroOpConfig",
 ]
-__version__ = "0.1.0"
+__version__ = "0.3.0"

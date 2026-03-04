@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 
@@ -39,6 +39,7 @@ class SleepReport:
     conflicts_resolved: int = 0
     duration_ms: float = 0.0
     patterns: list[MemorySlot] = field(default_factory=list)
+    skill_consolidation: dict[str, Any] | None = None
 
 
 class SleepCycle:
