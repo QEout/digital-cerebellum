@@ -17,6 +17,7 @@ from pathlib import Path
 
 from digital_cerebellum.main import CerebellumConfig
 from benchmarks.dataset import generate_comprehensive_benchmark
+from benchmarks.sequential_dataset import generate_sequential_benchmark
 from benchmarks.runner import (
     AblationConfig,
     BenchmarkResult,
@@ -116,7 +117,7 @@ def run_baseline_comparison(cfg: CerebellumConfig, n: int = 200) -> list[Benchma
 def run_phase2_comparison(cfg: CerebellumConfig, n: int = 300) -> list[BenchmarkResult]:
     """Compare Phase 1 (baseline) vs Phase 2 components."""
     print("\n" + "=" * 70)
-    print("  PHASE 2 COMPARISON")
+    print("  PHASE 2 COMPARISON (static benchmark)")
     print("=" * 70)
 
     dataset = generate_comprehensive_benchmark(n=n, seed=789)
@@ -132,7 +133,71 @@ def run_phase2_comparison(cfg: CerebellumConfig, n: int = 300) -> list[Benchmark
               f"speedup={result.speedup:.1f}x")
 
     print("\n" + "=" * 70)
-    print("  PHASE 2 COMPARISON")
+    print("  PHASE 2 COMPARISON (static)")
+    print("=" * 70)
+    print(compare_results(results))
+
+    return results
+
+
+def run_sequential_benchmark(cfg: CerebellumConfig) -> list[BenchmarkResult]:
+    """Run sequential (temporal) benchmark — Phase 2 components shine here."""
+    print("\n" + "=" * 70)
+    print("  SEQUENTIAL BENCHMARK (temporal patterns)")
+    print("=" * 70)
+
+    dataset = generate_sequential_benchmark(n_sessions=20, seed=42)
+    print(f"  Dataset: {len(dataset)} samples in temporal sessions")
+    results = []
+
+    configs = [
+        AblationConfig.full(),
+        AblationConfig.phase2_full(),
+        AblationConfig.phase2_state_only(),
+    ]
+
+    for ablation in configs:
+        print(f"\n--- Running: {ablation.label} ---")
+        runner = BenchmarkRunner(cfg=cfg, ablation=ablation)
+        result = runner.run(dataset, warmup_ratio=0.3, verbose=False)
+        results.append(result)
+        print(f"  {ablation.label}: acc={result.accuracy:.1%} "
+              f"f1={result.f1:.3f} fast={result.fast_path_ratio:.1%} "
+              f"speedup={result.speedup:.1f}x")
+
+    print("\n" + "=" * 70)
+    print("  SEQUENTIAL BENCHMARK COMPARISON")
+    print("=" * 70)
+    print(compare_results(results))
+
+    return results
+
+
+def run_phase3_benchmark(cfg: CerebellumConfig, n: int = 300) -> list[BenchmarkResult]:
+    """
+    Phase 3 benchmark — evaluate emergent cognitive properties.
+
+    Tests whether somatic marker, curiosity drive, and self-model
+    improve accuracy and learning efficiency over the baseline.
+    """
+    print("\n" + "=" * 70)
+    print("  PHASE 3 BENCHMARK (emergent cognition)")
+    print("=" * 70)
+
+    dataset = generate_comprehensive_benchmark(n=n, seed=303)
+    results = []
+
+    for ablation in AblationConfig.phase3_ablations():
+        print(f"\n--- Running: {ablation.label} ---")
+        runner = BenchmarkRunner(cfg=cfg, ablation=ablation)
+        result = runner.run(dataset, warmup_ratio=0.4, verbose=False)
+        results.append(result)
+        print(f"  {ablation.label}: acc={result.accuracy:.1%} "
+              f"f1={result.f1:.3f} fast={result.fast_path_ratio:.1%} "
+              f"speedup={result.speedup:.1f}x")
+
+    print("\n" + "=" * 70)
+    print("  PHASE 3 COMPARISON")
     print("=" * 70)
     print(compare_results(results))
 
@@ -145,6 +210,8 @@ def main():
     parser.add_argument("--ablation", action="store_true", help="Run ablation study")
     parser.add_argument("--baseline", action="store_true", help="Run baseline comparison")
     parser.add_argument("--phase2", action="store_true", help="Run Phase 2 comparison")
+    parser.add_argument("--phase3", action="store_true", help="Run Phase 3 comparison")
+    parser.add_argument("--sequential", action="store_true", help="Run sequential benchmark")
     parser.add_argument("--all", action="store_true", help="Run everything")
     parser.add_argument("--save", type=str, default=None, help="Save results to JSON")
     args = parser.parse_args()
@@ -153,7 +220,8 @@ def main():
     n = 100 if args.quick else 500
     all_results = []
 
-    if args.all or (not args.ablation and not args.baseline and not args.phase2):
+    if args.all or (not any([args.ablation, args.baseline, args.phase2,
+                             args.phase3, args.sequential])):
         result = run_full_benchmark(cfg, n=n)
         all_results.append(result)
 
@@ -168,6 +236,14 @@ def main():
     if args.phase2 or args.all:
         phase2_results = run_phase2_comparison(cfg, n=min(n, 300))
         all_results.extend(phase2_results)
+
+    if args.phase3 or args.all:
+        phase3_results = run_phase3_benchmark(cfg, n=min(n, 300))
+        all_results.extend(phase3_results)
+
+    if args.sequential or args.all:
+        seq_results = run_sequential_benchmark(cfg)
+        all_results.extend(seq_results)
 
     if args.save:
         out = [r.to_dict(include_steps=True) for r in all_results]

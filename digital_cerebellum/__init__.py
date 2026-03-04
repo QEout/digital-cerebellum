@@ -23,6 +23,10 @@ Two ways to use:
 
 from digital_cerebellum.main import DigitalCerebellum, CerebellumConfig
 from digital_cerebellum.brain import DigitalBrain
+from digital_cerebellum.emergence import SomaticMarker, CuriosityDrive, SelfModel
 
-__all__ = ["DigitalCerebellum", "CerebellumConfig", "DigitalBrain"]
+__all__ = [
+    "DigitalCerebellum", "CerebellumConfig", "DigitalBrain",
+    "SomaticMarker", "CuriosityDrive", "SelfModel",
+]
 __version__ = "0.1.0"

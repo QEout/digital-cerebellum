@@ -223,6 +223,10 @@ class AblationConfig:
     frequency_filter: bool = False
     golgi_gate: bool = False
     state_estimator: bool = False
+    # Phase 3 toggles
+    somatic_marker: bool = False
+    curiosity_drive: bool = False
+    self_model: bool = False
 
     @staticmethod
     def full() -> "AblationConfig":
@@ -288,6 +292,46 @@ class AblationConfig:
             cls.phase2_state_only(),
         ]
 
+    # Phase 3 configs
+    @staticmethod
+    def phase3_full() -> "AblationConfig":
+        return AblationConfig(
+            label="phase3_full",
+            somatic_marker=True, curiosity_drive=True, self_model=True,
+        )
+
+    @staticmethod
+    def phase3_somatic_only() -> "AblationConfig":
+        return AblationConfig(label="phase3_somatic", somatic_marker=True)
+
+    @staticmethod
+    def phase3_curiosity_only() -> "AblationConfig":
+        return AblationConfig(label="phase3_curiosity", curiosity_drive=True)
+
+    @staticmethod
+    def phase3_selfmodel_only() -> "AblationConfig":
+        return AblationConfig(label="phase3_self", self_model=True)
+
+    @staticmethod
+    def phase3_plus_p2() -> "AblationConfig":
+        """Phase 2 + Phase 3 all enabled — full system."""
+        return AblationConfig(
+            label="p2+p3_full",
+            frequency_filter=True, golgi_gate=True, state_estimator=True,
+            somatic_marker=True, curiosity_drive=True, self_model=True,
+        )
+
+    @classmethod
+    def phase3_ablations(cls) -> list["AblationConfig"]:
+        return [
+            cls.full(),
+            cls.phase3_full(),
+            cls.phase3_somatic_only(),
+            cls.phase3_curiosity_only(),
+            cls.phase3_selfmodel_only(),
+            cls.phase3_plus_p2(),
+        ]
+
 
 # ======================================================================
 # Runner
@@ -323,6 +367,11 @@ class BenchmarkRunner:
         cfg.enable_frequency_filter = self.ablation.frequency_filter
         cfg.enable_golgi_gate = self.ablation.golgi_gate
         cfg.enable_state_estimator = self.ablation.state_estimator
+
+        # Phase 3 emergence
+        cfg.enable_somatic_marker = self.ablation.somatic_marker
+        cfg.enable_curiosity_drive = self.ablation.curiosity_drive
+        cfg.enable_self_model = self.ablation.self_model
 
         cb = DigitalCerebellum(cfg)
         cb.register_microzone(ToolCallMicrozone())
@@ -412,6 +461,12 @@ class BenchmarkRunner:
         correct = None
         if sample.ground_truth_safe is not None:
             correct = (predicted_safe == sample.ground_truth_safe)
+
+        # Feed back to Phase 3 systems (somatic marker + self-model)
+        if sample.ground_truth_safe is not None:
+            event_id = eval_result.get("_event_id", "")
+            if event_id:
+                cb.feedback(event_id, success=correct or False)
 
         return StepResult(
             sample_id=sample.id,

@@ -83,6 +83,30 @@ class TaskHead(nn.Module):
         return out
 
 
+class StateConditioner(nn.Module):
+    """
+    Modulates RFF features using a state embedding from the State Estimator.
+
+    Biology: proprioceptive feedback from the body (via mossy fibres)
+    modulates granule cell activity based on the current motor state.
+
+    Digital: state_embedding → learned gain vector → element-wise modulation of z.
+    """
+
+    def __init__(self, rff_dim: int, state_dim: int):
+        super().__init__()
+        self.proj = nn.Sequential(
+            nn.Linear(state_dim, rff_dim),
+            nn.Sigmoid(),
+        )
+
+    def forward(self, z: torch.Tensor, state: torch.Tensor) -> torch.Tensor:
+        gain = self.proj(state)
+        if z.dim() > state.dim():
+            gain = gain.unsqueeze(0).expand_as(z)
+        return z * (0.5 + gain)
+
+
 class PredictionEngine(nn.Module):
     """
     K-head population predictor + pluggable task heads.
@@ -101,8 +125,13 @@ class PredictionEngine(nn.Module):
             for _ in range(cfg.num_heads)
         ])
         self.task_heads = nn.ModuleDict()
+        self._state_conditioner: StateConditioner | None = None
 
     # ------------------------------------------------------------------
+    def enable_state_conditioning(self, state_dim: int):
+        """Attach a state conditioner that modulates RFF features."""
+        self._state_conditioner = StateConditioner(self.cfg.rff_dim, state_dim)
+
     def register_task_head(self, name: str, output_dim: int = 1, activation: str = "sigmoid"):
         """Register a new task-specific readout head (one per microzone task)."""
         self.task_heads[name] = TaskHead(self.cfg.rff_dim, output_dim, activation)
@@ -113,11 +142,12 @@ class PredictionEngine(nn.Module):
         return self.task_heads["safety"] if "safety" in self.task_heads else None
 
     # ------------------------------------------------------------------
-    def forward(self, z: torch.Tensor) -> PredictionOutput:
+    def forward(self, z: torch.Tensor, state: torch.Tensor | None = None) -> PredictionOutput:
         """
         Parameters
         ----------
         z : (rff_dim,) or (batch, rff_dim)
+        state : optional (state_dim,) — from StateEstimator
 
         Returns
         -------
@@ -126,6 +156,9 @@ class PredictionEngine(nn.Module):
         squeezed = z.dim() == 1
         if squeezed:
             z = z.unsqueeze(0)
+
+        if state is not None and self._state_conditioner is not None:
+            z = self._state_conditioner(z, state)
 
         all_actions: list[torch.Tensor] = []
         all_outcomes: list[torch.Tensor] = []

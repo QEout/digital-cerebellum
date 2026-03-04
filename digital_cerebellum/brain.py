@@ -327,15 +327,15 @@ class DigitalBrain:
         """Clear conversation history."""
         self._conversation.clear()
 
+    def introspect(self, domain: str | None = None):
+        """Metacognitive self-report — what the brain knows about itself."""
+        return self.cerebellum.introspect(domain)
+
     @property
     def stats(self) -> dict[str, Any]:
         return {
             **self._stats,
-            "cerebellum": {
-                "engine_step": self.cerebellum._step,
-                "memory": self.cerebellum.memory.stats,
-                "microzones": list(self.cerebellum._microzones.keys()),
-            },
+            "cerebellum": self.cerebellum.stats,
             "tools_registered": list(self._tools.keys()),
             "conversation_length": len(self._conversation),
         }

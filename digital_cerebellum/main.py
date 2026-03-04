@@ -83,6 +83,11 @@ class CerebellumConfig:
     enable_state_estimator: bool = False
     state_dim: int = 64
 
+    # Phase 3 emergence
+    enable_somatic_marker: bool = False
+    enable_curiosity_drive: bool = False
+    enable_self_model: bool = False
+
     # LLM (slow path)
     llm_model: str = "qwen3.5-flash"
     llm_api_key: str | None = None
@@ -164,6 +169,15 @@ class CerebellumConfig:
             if "state_dim" in p2:
                 cfg.state_dim = p2["state_dim"]
 
+            # Phase 3 emergence
+            p3 = data.get("phase3", {})
+            if "somatic_marker" in p3:
+                cfg.enable_somatic_marker = p3["somatic_marker"]
+            if "curiosity_drive" in p3:
+                cfg.enable_curiosity_drive = p3["curiosity_drive"]
+            if "self_model" in p3:
+                cfg.enable_self_model = p3["self_model"]
+
         return cfg
 
 
@@ -242,6 +256,25 @@ class DigitalCerebellum:
             self._state_estimator = StateEstimator(
                 state_dim=self.cfg.state_dim,
             )
+            self.engine.enable_state_conditioning(self.cfg.state_dim)
+
+        # Phase 3: Somatic marker (gut feeling)
+        self._somatic_marker = None
+        if self.cfg.enable_somatic_marker:
+            from digital_cerebellum.emergence.somatic_marker import SomaticMarker
+            self._somatic_marker = SomaticMarker()
+
+        # Phase 3: Curiosity drive (intrinsic motivation)
+        self._curiosity_drive = None
+        if self.cfg.enable_curiosity_drive:
+            from digital_cerebellum.emergence.curiosity_drive import CuriosityDrive
+            self._curiosity_drive = CuriosityDrive()
+
+        # Phase 3: Self-model (metacognition)
+        self._self_model = None
+        if self.cfg.enable_self_model:
+            from digital_cerebellum.emergence.self_model import SelfModel
+            self._self_model = SelfModel()
 
         # ⑦ Fluid memory + sleep cycle
         self.memory = FluidMemory()
@@ -347,11 +380,36 @@ class DigitalCerebellum:
                 z_t = self._freq_filter(z_t)
                 z = z_t.numpy()
 
-        # ③ Predict
-        prediction = self.engine.predict_numpy(z)
+        # ③ Predict (with optional state conditioning)
+        if self._state_estimator is not None:
+            with torch.no_grad():
+                state_vec = self._state_estimator()
+                prediction = self.engine.forward(
+                    torch.from_numpy(z).float(), state=state_vec,
+                )
+        else:
+            prediction = self.engine.predict_numpy(z)
 
-        # ④ Route
+        # Phase 3: Somatic marker — gut feeling from head divergence pattern
+        gut_feeling = None
+        if self._somatic_marker is not None:
+            from digital_cerebellum.emergence.somatic_marker import GutFeeling
+            gut_feeling = self._somatic_marker.feel(
+                prediction.head_predictions, domain=microzone_name,
+            )
+
+        # ④ Route (gut feeling can override)
         routing = self.router.route(prediction)
+
+        if gut_feeling is not None and gut_feeling.should_override:
+            if routing.decision == RouteDecision.FAST:
+                routing = routing.__class__(
+                    decision=RouteDecision.SLOW,
+                    confidence=prediction.confidence,
+                    reason=f"gut_override: {gut_feeling.label} "
+                           f"(v={gut_feeling.valence:.2f}, i={gut_feeling.intensity:.2f})",
+                )
+
         latency_ms = (time.time() - t0) * 1000
 
         if routing.decision == RouteDecision.FAST:
@@ -373,6 +431,31 @@ class DigitalCerebellum:
 
         result["_step"] = self._step
         result["_event_id"] = event_id
+
+        # Phase 3: Attach gut feeling
+        if gut_feeling is not None:
+            result["_gut_feeling"] = {
+                "valence": gut_feeling.valence,
+                "intensity": gut_feeling.intensity,
+                "label": gut_feeling.label,
+            }
+
+        # Phase 3: Curiosity assessment
+        if self._curiosity_drive is not None:
+            spe_mag = float(np.linalg.norm(
+                prediction.action_embedding - prediction.outcome_embedding
+            )) if prediction.action_embedding is not None else 0.0
+            curiosity = self._curiosity_drive.assess(
+                domain=microzone_name,
+                error=spe_mag,
+                feature_vec=feature_vec,
+            )
+            result["_curiosity"] = {
+                "novelty": curiosity.novelty,
+                "learning_progress": curiosity.learning_progress,
+                "intrinsic_reward": curiosity.intrinsic_reward,
+                "recommendation": curiosity.recommendation,
+            }
 
         # Phase 2: State estimator tracking
         if self._state_estimator is not None:
@@ -463,6 +546,24 @@ class DigitalCerebellum:
         expected = ctx.get("confidence", 0.5) if isinstance(ctx, dict) else 0.5
         rpe = self.comparator.compute_reward_error(expected, actual, event_id)
         self.router.update_from_reward(rpe)
+
+        # Phase 3: Record somatic marker (valence pattern)
+        prediction = ctx.get("prediction")
+        if self._somatic_marker is not None and prediction is not None:
+            self._somatic_marker.record(
+                prediction.head_predictions,
+                valence=actual,
+                domain=ctx.get("microzone", ""),
+            )
+
+        # Phase 3: Self-model observation
+        if self._self_model is not None:
+            self._self_model.record(
+                domain=ctx.get("microzone", "unknown"),
+                correct=success,
+                confidence=ctx.get("confidence", 0.5),
+                route=ctx.get("routing", "slow"),
+            )
 
     # ==================================================================
     # Internal — domain-agnostic
@@ -563,11 +664,39 @@ class DigitalCerebellum:
     # Diagnostics
     # ==================================================================
     @property
+    def somatic_marker(self):
+        """Access the somatic marker (lazy init if not configured)."""
+        if self._somatic_marker is None:
+            from digital_cerebellum.emergence.somatic_marker import SomaticMarker
+            self._somatic_marker = SomaticMarker()
+        return self._somatic_marker
+
+    @property
+    def curiosity_drive(self):
+        """Access the curiosity drive (lazy init if not configured)."""
+        if self._curiosity_drive is None:
+            from digital_cerebellum.emergence.curiosity_drive import CuriosityDrive
+            self._curiosity_drive = CuriosityDrive()
+        return self._curiosity_drive
+
+    @property
+    def self_model(self):
+        """Access the self-model (lazy init if not configured)."""
+        if self._self_model is None:
+            from digital_cerebellum.emergence.self_model import SelfModel
+            self._self_model = SelfModel()
+        return self._self_model
+
+    def introspect(self, domain: str | None = None):
+        """Generate a metacognitive self-report."""
+        return self.self_model.introspect(domain)
+
+    @property
     def stats(self) -> dict:
         routes = {"fast": 0, "shadow": 0, "slow": 0}
         for h in self._history:
             routes[h["route"]] = routes.get(h["route"], 0) + 1
-        return {
+        result = {
             "step": self._step,
             "microzones": list(self._microzones),
             "task_heads": list(self.engine.task_heads.keys()),
@@ -575,3 +704,10 @@ class DigitalCerebellum:
             "router": self.router.stats,
             "memory": self.memory.stats,
         }
+        if self._somatic_marker is not None:
+            result["somatic_marker"] = self._somatic_marker.stats
+        if self._curiosity_drive is not None:
+            result["curiosity"] = self._curiosity_drive.stats
+        if self._self_model is not None:
+            result["self_model"] = self._self_model.stats
+        return result
