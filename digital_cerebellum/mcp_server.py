@@ -23,6 +23,7 @@ from mcp.server.fastmcp import FastMCP
 
 from digital_cerebellum.main import CerebellumConfig, DigitalCerebellum
 from digital_cerebellum.microzones import ALL_MICROZONES
+from digital_cerebellum.monitor import StepMonitor
 
 log = logging.getLogger(__name__)
 
@@ -37,6 +38,7 @@ mcp = FastMCP(
 )
 
 _cb: DigitalCerebellum | None = None
+_monitor: StepMonitor | None = None
 
 
 def _get_cerebellum() -> DigitalCerebellum:
@@ -58,6 +60,16 @@ def _get_cerebellum() -> DigitalCerebellum:
         log.info("Digital Cerebellum initialized with microzones: %s",
                  list(_cb._microzones.keys()))
     return _cb
+
+
+def _get_monitor() -> StepMonitor:
+    """Lazy-init the step monitor singleton."""
+    global _monitor
+    if _monitor is None:
+        cb = _get_cerebellum()
+        _monitor = StepMonitor(cerebellum=cb)
+        log.info("StepMonitor initialized")
+    return _monitor
 
 
 # ======================================================================
@@ -392,6 +404,149 @@ def get_curiosity_ranking() -> list[dict[str, Any]]:
         {"domain": domain, "curiosity_score": round(score, 4)}
         for domain, score in ranking
     ]
+
+
+# ======================================================================
+# Step Monitor tools (Phase 7 — universal agent monitoring)
+# ======================================================================
+
+@mcp.tool()
+def monitor_before_step(
+    action: str,
+    state: str = "",
+    context: str = "",
+) -> dict[str, Any]:
+    """
+    Call BEFORE the agent executes an action.
+
+    The cerebellum predicts the expected outcome and checks for known
+    failure patterns.  Returns a risk assessment and recommendation.
+
+    This is the universal monitoring protocol: any agent framework
+    can call this before each step to get predictive error interception.
+
+    Args:
+        action: Description of what the agent intends to do
+            (e.g., "click the save button", "run git push", "move north")
+        state: Description of the current state (optional)
+            (e.g., "file editor open with unsaved changes", "health=50 position=(3,4)")
+        context: Additional context (optional)
+
+    Returns:
+        Prediction with should_proceed recommendation, risk score,
+        confidence, and any failure warnings from past experience.
+    """
+    monitor = _get_monitor()
+    pred = monitor.before_step(action=action, state=state or None, context=context)
+    result = {
+        "should_proceed": pred.should_proceed,
+        "confidence": round(pred.confidence, 4),
+        "risk_score": round(pred.risk_score, 4),
+        "cascade_risk": round(pred.cascade_risk, 4),
+        "step_number": pred.step_number,
+    }
+    if pred.failure_warning is not None:
+        result["failure_warning"] = {
+            "pattern": pred.failure_warning.pattern_description,
+            "similarity": round(pred.failure_warning.similarity, 4),
+            "severity": round(pred.failure_warning.severity, 4),
+        }
+    return result
+
+
+@mcp.tool()
+def monitor_after_step(
+    outcome: str,
+    success: bool | None = None,
+) -> dict[str, Any]:
+    """
+    Call AFTER the agent executes an action.
+
+    The cerebellum compares the actual outcome against its prediction,
+    detects error cascades, and learns from the experience.
+
+    Args:
+        outcome: Description of what actually happened
+            (e.g., "save dialog appeared", "error: permission denied")
+        success: Whether the step succeeded (optional).
+            If not provided, the cerebellum infers from prediction error.
+
+    Returns:
+        Verdict with should_pause recommendation, SPE magnitude,
+        cascade risk, and suggested next action.
+    """
+    monitor = _get_monitor()
+    verdict = monitor.after_step(outcome=outcome, success=success)
+    return _sanitize({
+        "spe": round(verdict.spe, 4),
+        "should_pause": verdict.should_pause,
+        "cascade_risk": round(verdict.cascade_risk, 4),
+        "consecutive_errors": verdict.consecutive_errors,
+        "suggestion": verdict.suggestion,
+        "step_number": verdict.step_number,
+        "details": verdict.details,
+    })
+
+
+@mcp.tool()
+def monitor_reset() -> dict[str, Any]:
+    """
+    Reset the step monitor for a new task/episode.
+
+    Clears step history and cascade state, but keeps learned
+    knowledge (forward model weights and failure memory persist).
+
+    Returns:
+        Summary of the completed episode.
+    """
+    monitor = _get_monitor()
+    summary = monitor.reset()
+    return _sanitize(summary)
+
+
+@mcp.tool()
+def monitor_rollback_plan() -> dict[str, Any]:
+    """
+    Get the auto-rollback plan after a cascade is detected.
+
+    When monitor_after_step returns should_pause=true, a rollback
+    plan is automatically computed.  This tool returns it with:
+    - Which step to roll back to
+    - The last safe state description
+    - List of failed steps to undo
+    - A human-readable recommendation
+
+    Returns:
+        The rollback plan, or {"available": false} if no cascade
+        has been detected in this episode.
+    """
+    monitor = _get_monitor()
+    plan = monitor.get_rollback_plan()
+    if plan is None:
+        return {"available": False}
+    return _sanitize({
+        "available": True,
+        "rollback_to_step": plan.rollback_to_step,
+        "last_safe_state": plan.last_safe_state,
+        "last_safe_outcome": plan.last_safe_outcome,
+        "steps_wasted": plan.steps_wasted,
+        "total_steps": plan.total_steps,
+        "cascade_risk": round(plan.cascade_risk, 4),
+        "failed_steps": plan.failed_steps,
+        "recommendation": plan.recommendation,
+    })
+
+
+@mcp.tool()
+def monitor_status() -> dict[str, Any]:
+    """
+    Get current step monitor status.
+
+    Returns forward model stats, cascade detector state,
+    failure memory count, and current episode summary.
+    """
+    monitor = _get_monitor()
+    return _sanitize(monitor.stats)
 
 
 # ======================================================================

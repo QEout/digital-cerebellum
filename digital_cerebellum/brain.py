@@ -52,6 +52,8 @@ from typing import Any, Callable
 from digital_cerebellum.main import CerebellumConfig, DigitalCerebellum
 from digital_cerebellum.microzones.tool_call import ToolCallMicrozone
 from digital_cerebellum.micro_ops.engine import MicroOpEngine, MicroOpConfig, Environment
+from digital_cerebellum.monitor.step_monitor import StepMonitor
+from digital_cerebellum.monitor.types import StepPrediction, StepVerdict
 
 log = logging.getLogger(__name__)
 
@@ -533,6 +535,47 @@ class DigitalBrain:
                 cfg=cfg or MicroOpConfig(),
             )
         return self._engines[key]
+
+    # ==================================================================
+    # Step monitoring (Phase 7 — universal agent monitoring)
+    # ==================================================================
+
+    @property
+    def monitor(self) -> StepMonitor:
+        """
+        Access the step monitor for predictive error interception.
+
+        The monitor wraps any agent's execution loop with
+        before_step / after_step calls.  It shares the cerebellum's
+        encoder for consistent embeddings.
+
+        Usage::
+
+            brain = DigitalBrain.from_yaml()
+            pred = brain.before_step("click save button", state="editor open")
+            # ... execute ...
+            verdict = brain.after_step("save dialog appeared")
+        """
+        if not hasattr(self, "_monitor"):
+            self._monitor = StepMonitor(cerebellum=self.cerebellum)
+        return self._monitor
+
+    def before_step(
+        self,
+        action: str | dict,
+        state: str | dict | None = None,
+        context: str = "",
+    ) -> StepPrediction:
+        """Convenience: call monitor.before_step()."""
+        return self.monitor.before_step(action=action, state=state, context=context)
+
+    def after_step(
+        self,
+        outcome: str | dict,
+        success: bool | None = None,
+    ) -> StepVerdict:
+        """Convenience: call monitor.after_step()."""
+        return self.monitor.after_step(outcome=outcome, success=success)
 
     # ==================================================================
     # Internal

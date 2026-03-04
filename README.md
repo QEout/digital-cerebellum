@@ -3,29 +3,38 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18850778.svg)](https://doi.org/10.5281/zenodo.18850778)
 [![PyPI](https://img.shields.io/pypi/v/digital-cerebellum)](https://pypi.org/project/digital-cerebellum/)
 
-A cerebellar-inspired cognitive architecture that gives AI agents a "body" — skill learning, autonomous execution, real-time micro-operations, intuition, curiosity, and self-awareness.
+A cerebellar-inspired cognitive architecture that makes AI agents reliable — predictive error interception, skill learning, real-time micro-operations, and experience accumulation.
 
-一个受生物小脑启发的认知架构：让 AI Agent 从"回答机器"变成"有经验的行动者"——技能学习、自主执行、实时微操、直觉、好奇心和自我意识。
+一个受生物小脑启发的认知架构：通过预测性错误拦截、技能学习、实时微操和经验积累，让 AI Agent 不翻车。
 
 ---
 
-## What is this?
+## The Problem
 
-Current AI agents are all "cerebral cortex" — slow, expensive, flexible reasoning. But biological intelligence runs on **two engines**: the cerebral cortex *and* the cerebellum.
+AI agents are fragile. CMU's TheAgentCompany benchmark: best agent success rate is **24%**. 76% of failures come from **error cascading** — one step goes wrong, every subsequent step fails, and the agent doesn't even notice.
 
-The cerebellum holds ~50% of all brain neurons. It doesn't think — it **predicts, corrects, and automates**. It's why you can catch a ball without calculating parabolas, why a pianist's fingers move faster than conscious thought.
+## The Solution
 
-**Digital Cerebellum** brings this to AI agents:
+Biological brains don't have this problem. When you trip while carrying a glass of water, your **cerebellum** detects the posture deviation in 50ms and corrects — before your cortex even knows something happened.
 
-- **Skill learning** — learns from every LLM interaction, replays skills directly
-- **< 10ms** fast-path execution (vs 1-10s for LLM)
-- **25%+ automation** after just 20 interactions (grows with use)
-- **Real-time micro-operations** — continuous control at 285Hz+, 3.5ms/step, no LLM needed
-- **Online learning** — gets better with every interaction, no retraining needed
-- **6 built-in microzones** — tool calls, payments, shell commands, file ops, API calls, response prediction
-- **Gut feeling** — population divergence patterns trigger intuitive alarms
-- **Curiosity** — actively seeks learnable domains for efficient exploration
-- **Self-awareness** — knows what it's good at, defers what it can't handle
+**Digital Cerebellum** does the same for AI agents — making them both **faster** and **more reliable**:
+
+**Faster** (learned patterns bypass LLM):
+- **< 10ms** fast-path execution vs 1-10s for LLM — **100x+ speedup**
+- **25%+ automation** after 20 interactions, grows with use
+- **285Hz** real-time micro-operations — continuous control no LLM can do
+- **33.4x** measured speedup in closed-loop benchmark
+
+**More reliable** (catches errors before they cascade):
+- **100% cascade detection** across 7 domains (web, file, code, data, desktop, API, ML)
+- **71% waste prevention** — reduces wasted steps from 31 to 9 in benchmark
+- **2.3 steps** average detection delay — catches failure before damage spreads
+- **Failure memory** — same mistake never happens twice
+
+**Both at once** (just like the biological cerebellum):
+- **Online learning** — every interaction makes it faster AND more accurate
+- **Save/load** — learned knowledge persists across sessions
+- Fast for what it knows, careful for what it doesn't
 
 ## Architecture
 
@@ -82,6 +91,20 @@ Event Input
 │  Action Encoder         (continuous action space codec)         │
 │  MicroOp Engine         (observe→predict→act→learn at 285Hz+)  │
 │                                                                 │
+├─ Phase 7: Step Monitor (Predictive Error Interception) ────────┤
+│                                                                 │
+│  StepMonitor            (before_step/after_step protocol)       │
+│  StepForwardModel       (text/vector forward model per step)    │
+│  ErrorCascadeDetector   (consecutive SPE tracking)              │
+│  FailureMemory          (somatic markers for past failures)     │
+│  AutoRollback           (cascade → rollback plan computation)   │
+│  Save/Load              (persist learned knowledge)             │
+│                                                                 │
+├─ Phase 8: Agent Integrations ────────────────────────────────────┤
+│                                                                 │
+│  LangChain Callback     (CerebellumCallback, CerebellumPause)  │
+│  MCP Server             (17 tools, stdio + HTTP transport)      │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -114,6 +137,57 @@ Every component maps to neuroscience:
 pip install digital-cerebellum
 ```
 
+### As a step monitor (wrap any agent)
+
+The simplest and most impactful integration — just two calls per step:
+
+```python
+from digital_cerebellum import StepMonitor
+
+monitor = StepMonitor()
+
+# Before executing an action
+pred = monitor.before_step(
+    action="click the save button",
+    state="file editor is open with unsaved changes",
+)
+
+if not pred.should_proceed:
+    print(f"STOP: {pred.failure_warning}")
+else:
+    # Execute the action...
+    result = agent.execute(step)
+
+    # After executing
+    verdict = monitor.after_step(outcome="save dialog appeared")
+
+    if verdict.should_pause:
+        plan = monitor.get_rollback_plan()
+        print(f"CASCADE: roll back to step {plan.rollback_to_step}")
+        print(f"  {plan.recommendation}")
+
+# Save learned knowledge for next session
+monitor.save()
+```
+
+### With LangChain (one-line integration)
+
+```bash
+pip install digital-cerebellum[langchain]
+```
+
+```python
+from digital_cerebellum.integrations.langchain import CerebellumCallback
+
+cb = CerebellumCallback()
+agent = initialize_agent(..., callbacks=[cb])
+
+try:
+    agent.run("Deploy the production build")
+except CerebellumPause as e:
+    print(f"Cascade detected! {e.rollback_plan.recommendation}")
+```
+
 ### As a cerebellum SDK (plug into your agent)
 
 ```python
@@ -131,13 +205,9 @@ print(result)  # {"safe": True, "confidence": 0.98, "_route": "fast", ...}
 
 # Post-execution feedback (drives learning)
 cb.feedback(result["_event_id"], success=True)
-
-# Metacognitive self-report
-report = cb.introspect()
-print(report.to_prompt())
 ```
 
-### As a complete brain (no framework needed)
+### As a complete brain (demos and prototyping)
 
 ```python
 from digital_cerebellum import DigitalBrain
@@ -153,7 +223,6 @@ brain.skill_feedback(r1, success=True)
 r2 = brain.think("What's the weather in Paris?")
 print(r2.used_fast_path)   # True!
 print(r2.llm_called)       # False!
-print(brain.stats["automation_ratio"])  # grows over time
 ```
 
 ### With all phases enabled (config.yaml)
@@ -200,22 +269,27 @@ Or run as an HTTP server for remote clients:
 digital-cerebellum-mcp --http --port 8000
 ```
 
-**Exposed tools:**
+**Exposed tools (17):**
 
-| Tool | Description |
-|------|-------------|
-| `evaluate_tool_call` | Evaluate tool-call safety before execution |
-| `evaluate_payment` | Assess payment/transaction risk |
-| `evaluate_shell_command` | Evaluate shell command safety (rm, sudo, etc.) |
-| `evaluate_file_operation` | Evaluate filesystem operation safety |
-| `evaluate_api_call` | Evaluate external API call safety |
-| `learn_skill` | Teach the cerebellum a new skill from an interaction |
-| `match_skill` | Check if the cerebellum can handle a query directly |
-| `skill_feedback` | Reinforce/weaken a learned skill |
-| `feedback` | Post-execution feedback (drives online learning) |
-| `introspect` | Metacognitive self-report |
-| `get_stats` | System statistics and metrics |
-| `get_curiosity_ranking` | Domains ranked by learning potential |
+| Tool | Category | Description |
+|------|----------|-------------|
+| `evaluate_tool_call` | Safety | Evaluate tool-call safety before execution |
+| `evaluate_payment` | Safety | Assess payment/transaction risk |
+| `evaluate_shell_command` | Safety | Evaluate shell command safety (rm, sudo, etc.) |
+| `evaluate_file_operation` | Safety | Evaluate filesystem operation safety |
+| `evaluate_api_call` | Safety | Evaluate external API call safety |
+| `learn_skill` | Speed | Teach the cerebellum a new skill from an interaction |
+| `match_skill` | Speed | Check if the cerebellum can handle a query directly |
+| `skill_feedback` | Speed | Reinforce/weaken a learned skill |
+| `monitor_before_step` | Reliability | Predict outcome before agent executes an action |
+| `monitor_after_step` | Reliability | Compare actual outcome, detect error cascades |
+| `monitor_rollback_plan` | Reliability | Get auto-rollback plan after cascade detection |
+| `monitor_reset` | Reliability | Reset monitor for a new task (keeps learned knowledge) |
+| `monitor_status` | Reliability | Get forward model stats, cascade state, failure count |
+| `feedback` | Learning | Post-execution feedback (drives online learning) |
+| `introspect` | Meta | Metacognitive self-report |
+| `get_stats` | Meta | System statistics and metrics |
+| `get_curiosity_ranking` | Meta | Domains ranked by learning potential |
 
 ## 6 Built-in Microzones (Universal Cerebellar Transform)
 
@@ -276,6 +350,62 @@ No LLM. No text. Pure cerebellar computation at millisecond precision.
 
 ## Benchmark results
 
+### Reliability benchmark (7 scenarios, with vs without cerebellum)
+
+```
+Scenario                     Domain  Steps  Fail@ │ No CB Waste │    CB Waste Saved │ Delay
+─────────────────────────────────────────────────────────────────────────────────────────────
+Job Application Form         web         8     4  │     8     4 │     6     2     2 │     3
+Project Backup & Migration   file        8     3  │     8     5 │     5     2     3 │     3
+API Endpoint Rename          code        8     4  │     8     4 │     5     1     3 │     2
+Monthly Revenue ETL          data        7     3  │     7     4 │     3     0     4 │     1
+Invoice Processing           desktop     8     3  │     8     5 │     5     2     3 │     3
+Customer Onboarding Workflow api         6     2  │     6     4 │     4     2     2 │     3
+ML Model Training Pipeline   ml          8     3  │     8     5 │     3     0     5 │     1
+─────────────────────────────────────────────────────────────────────────────────────────────
+Cascades caught:        7/7 (100%)
+Waste prevention rate:  71% (31 → 9 wasted steps)
+Avg detection delay:    2.3 steps after failure
+```
+
+Without cerebellum: agent completes all tasks but silently corrupts data.
+With cerebellum: agent stops and asks for help instead of causing damage.
+
+Run: `python benchmarks/reliability_benchmark.py --verbose`
+
+### OpenClaw desktop automation benchmark (5 real-world tasks)
+
+Simulates real OpenClaw-style desktop automation sequences (email, calendar, browser forms, file management, shell deploy). Tests both speed (SkillStore) and reliability (StepMonitor + AutoRollback).
+
+**Speed (SkillStore):**
+
+| Task | Cold (LLM) | Warm (Skill) | Speedup |
+|------|-----------|-------------|---------|
+| Email Processing | 7042ms | 8.3ms | 850x |
+| Calendar Management | 314ms | 8.0ms | 39x |
+| Browser Form Submission | 282ms | 8.2ms | 34x |
+| File Organization | 304ms | 7.9ms | 39x |
+| Shell Deploy Sequence | 265ms | 7.9ms | 33x |
+| **Average** | **1641ms** | **8.1ms** | **204x** |
+
+**Reliability (StepMonitor + AutoRollback):**
+
+| Task | Fail@ | Detect@ | Wasted (no monitor) | Wasted (monitor) | Saved | Rollback |
+|------|-------|---------|--------------------|--------------------|-------|----------|
+| Email Processing | 4 | 3 | 3 | 0 | 3 | step 3 OK |
+| Calendar Management | 3 | 4 | 4 | 1 | 3 | step 2 OK |
+| Browser Form Submission | 5 | 5 | 3 | 0 | 3 | step 4 OK |
+| File Organization | 3 | 4 | 5 | 1 | 4 | step 2 OK |
+| Shell Deploy Sequence | 3 | 3 | 5 | 0 | 5 | step 2 OK |
+
+- Cascade detection: **5/5** (100%)
+- Waste prevention: **20 → 2** (90% reduced)
+- Correct rollback plans: **5/5**
+
+**Learning curve:** 0% hit rate (round 1) → 100% hit rate (round 3), latency 36ms → 8ms.
+
+Run: `python benchmarks/openclaw_benchmark.py --verbose`
+
 ### Static benchmark (300 samples, DeepSeek V3)
 
 | Config | Accuracy | F1 | Fast Path | Fast Acc | Speedup |
@@ -313,8 +443,13 @@ Run benchmarks: `python -m benchmarks.run_all --phase3`
 - [x] **Phase 4**: Skill acquisition — SkillStore, skill matching, action sequence replay, reinforcement/extinction, active exploration
 - [x] **Phase 5**: Generic microzone framework — 6 built-in microzones (tool_call, payment, shell_command, file_operation, api_call, response_prediction)
 - [x] **Phase 6**: Micro-operation engine — StateEncoder, ForwardModel, ActionEncoder, MicroOpEngine (285Hz, 3.5ms/step, SPE↓99%)
-- [x] **MCP Server**: 12 tools, works with Claude Desktop, Cursor, any MCP-compatible client
-- [x] 225 unit tests passing
+- [x] **Phase 7**: Step Monitor — StepMonitor, ErrorCascadeDetector, FailureMemory, save/load, 100% cascade detection across 7 domains
+- [x] **MCP Server**: 17 tools (safety + speed + reliability + meta), works with Claude Desktop, Cursor, any MCP client
+- [x] **LangChain integration**: `CerebellumCallback` — one-line drop-in for any LangChain agent
+- [x] **AutoRollback**: Cascade detection → automatic rollback plan computation
+- [x] **Reliability Benchmark**: 7 scenarios, 71% waste prevention, 2.3-step avg detection delay
+- [x] **OpenClaw Benchmark**: 5 desktop automation scenarios — 204x speedup, 5/5 cascade detection, 5/5 correct rollbacks
+- [x] 296 unit tests passing
 - [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
 
 ## Docs

@@ -1,7 +1,7 @@
 [project]
 name = "digital-cerebellum"
-version = "0.3.0"
-description = "A cerebellar-inspired cognitive architecture — skill learning, real-time micro-operations, and autonomous control for AI agents"
+version = "0.5.0"
+description = "A cerebellar-inspired cognitive architecture — speed (SkillStore), reliability (StepMonitor + AutoRollback), and real-time control for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -42,10 +42,14 @@ Documentation = "https://github.com/QEout/digital-cerebellum/blob/main/docs/arch
 mcp = [
     "mcp>=1.20",
 ]
+langchain = [
+    "langchain-core>=0.3",
+]
 dev = [
     "pytest>=8.0",
     "jupyter>=1.0",
     "matplotlib>=3.8",
+    "langchain-core>=0.3",
 ]
 
 [project.scripts]
