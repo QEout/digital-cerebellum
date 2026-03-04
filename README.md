@@ -406,6 +406,59 @@ Simulates real OpenClaw-style desktop automation sequences (email, calendar, bro
 
 Run: `python benchmarks/openclaw_benchmark.py --verbose`
 
+### OpenClaw live integration (real agent, real LLM)
+
+Real end-to-end test: OpenClaw agent (kimi-k2.5 via gateway) executes tasks while Digital Cerebellum monitors every step as a transparent sidecar.
+
+| Test | Agent Task | Monitor Result |
+|------|-----------|---------------|
+| Q&A | "Capital of France?" → "Paris" | SPE=1.367, 71ms overhead |
+| Reasoning | 3 math/logic questions → 3/3 correct | SPE converging (1.43→1.08) |
+| Tool Use | Web search request | Handled gracefully |
+| Cascade | 3 impossible tasks → errors | Cascade detected at task 2, rollback plan generated |
+| Skill Learning | Learn Asimov's 3 laws from agent response | Skill stored, ID returned |
+
+- **Monitor overhead: <1ms** per step (local inference, no network)
+- **Cascade detection: YES** — caught error pattern in 2 consecutive failures
+- **MCP HTTP test: 17/17 tools** verified over Streamable HTTP protocol (74ms/step avg)
+
+Run: `python tests/integration/test_openclaw_live.py`
+
+### A/B comparison: WITH vs WITHOUT cerebellum (real OpenClaw agent)
+
+Same tasks, same agent (kimi-k2.5), same environment. Group A = pure OpenClaw. Group B = OpenClaw + Digital Cerebellum.
+
+**Experiment 1 — Repeated Task Acceleration (3 questions x 3 rounds):**
+
+| Metric | Group A (no cerebellum) | Group B (with cerebellum) | Delta |
+|--------|------------------------|--------------------------|-------|
+| Round 1 | 4976ms/q, 8637 tok/q | 4651ms/q, 8997 tok/q (learning) | ~same |
+| Round 2 | 4657ms/q, 8747 tok/q | **0ms/q, 0 tok/q** (skill hit) | **instant** |
+| Round 3 | 4535ms/q, 8871 tok/q | **0ms/q, 0 tok/q** (skill hit) | **instant** |
+| Total time | 42.5s | **14.0s** | 3x faster |
+| Total tokens | 78,765 | **26,992** | **66% saved** |
+| Accuracy | 9/9 | 9/9 | preserved |
+
+**Experiment 2 — Error Cascade Recovery (6-step dependent pipeline):**
+
+| Metric | Group A | Group B | Delta |
+|--------|---------|---------|-------|
+| Steps executed | 6 | **2** | 4 steps saved |
+| Wasted steps | 1 | **0** | eliminated |
+| Total time | 38.6s | **13.4s** | **65% saved** |
+| Cascade caught | N/A | **YES** | automatic |
+
+**Experiment 3 — Mixed Workload (8 queries, 50% repeated):**
+
+| Metric | Group A | Group B | Delta |
+|--------|---------|---------|-------|
+| Tokens | 80,090 | **41,027** | **49% saved** |
+| Time | 36.9s | **18.6s** | **50% faster** |
+| Accuracy | 8/8 | 8/8 | preserved |
+| Skill cache hits | 0/8 | **4/8** | 50% hit rate |
+
+Run: `python tests/integration/test_ab_comparison.py`
+
 ### Static benchmark (300 samples, DeepSeek V3)
 
 | Config | Accuracy | F1 | Fast Path | Fast Acc | Speedup |
@@ -449,7 +502,9 @@ Run benchmarks: `python -m benchmarks.run_all --phase3`
 - [x] **AutoRollback**: Cascade detection → automatic rollback plan computation
 - [x] **Reliability Benchmark**: 7 scenarios, 71% waste prevention, 2.3-step avg detection delay
 - [x] **OpenClaw Benchmark**: 5 desktop automation scenarios — 204x speedup, 5/5 cascade detection, 5/5 correct rollbacks
-- [x] 296 unit tests passing
+- [x] **OpenClaw Live Integration**: Real agent (kimi-k2.5) monitored via sidecar StepMonitor — Q&A, reasoning, tool use, cascade detection, skill learning all verified
+- [x] **SkillStore Persistence**: Skills survive restarts — JSON+numpy save/load, auto-integrated with MCP server
+- [x] 275 unit tests passing (+ 26 LLM-dependent deselected in CI)
 - [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
 
 ## Docs

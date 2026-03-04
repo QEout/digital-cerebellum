@@ -729,6 +729,7 @@ class DigitalCerebellum:
             "step": self._step,
             "history": self._history,
         }, path / "checkpoint.pt")
+        self.skill_store.save(path / "skills")
         log.info("Saved checkpoint to %s", path)
 
     def load(self, path: str | Path | None = None):
@@ -742,7 +743,8 @@ class DigitalCerebellum:
         self.separator.load_state_dict(ckpt["separator"])
         self._step = ckpt.get("step", 0)
         self._history = ckpt.get("history", [])
-        log.info("Loaded checkpoint from %s (step %d)", path, self._step)
+        self.skill_store.load(path / "skills")
+        log.info("Loaded checkpoint from %s (step %d, %d skills)", path, self._step, len(self.skill_store))
 
     # ==================================================================
     # Diagnostics

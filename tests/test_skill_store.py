@@ -371,3 +371,67 @@ class TestCuriosityExploration:
         requests = cd.get_exploration_requests()
         found = [r for r in requests if r["domain"] == "new_domain"]
         assert len(found) >= 0  # may or may not trigger depending on progress
+
+
+class TestSkillStorePersistence:
+    """Tests for save/load round-trip."""
+
+    def test_save_load_round_trip(self, tmp_path):
+        store = SkillStore(similarity_threshold=0.80)
+        emb1 = _rand_emb(10)
+        emb2 = _rand_emb(20)
+        store.learn_from_interaction(emb1, "hello", "world", domain="qa")
+        sid2 = store.learn_from_interaction(emb2, "bye", "see ya", [{"tool": "x"}], domain="chat")
+        store.reinforce(sid2)
+        store.reinforce(sid2)
+
+        store.save(tmp_path / "skills")
+
+        store2 = SkillStore()
+        loaded = store2.load(tmp_path / "skills")
+        assert loaded == 2
+        assert len(store2) == 2
+        assert store2.similarity_threshold == 0.80
+
+        match = store2.match(emb2)
+        assert match is not None
+        assert match.skill.response_text == "see ya"
+        assert match.skill.success_count == 2
+        assert match.skill.tool_calls == [{"tool": "x"}]
+        assert match.skill.domain == "chat"
+
+    def test_save_empty_store(self, tmp_path):
+        store = SkillStore()
+        store.save(tmp_path / "skills")
+        store2 = SkillStore()
+        loaded = store2.load(tmp_path / "skills")
+        assert loaded == 0
+        assert len(store2) == 0
+
+    def test_load_nonexistent_path(self, tmp_path):
+        store = SkillStore()
+        loaded = store.load(tmp_path / "nonexistent")
+        assert loaded == 0
+
+    def test_save_preserves_embeddings(self, tmp_path):
+        store = SkillStore()
+        emb = _rand_emb(99)
+        store.learn_from_interaction(emb, "test", "result", domain="d")
+        store.save(tmp_path / "skills")
+
+        store2 = SkillStore()
+        store2.load(tmp_path / "skills")
+        skill = store2.get_skills()[0]
+        np.testing.assert_allclose(skill.input_embedding, emb, atol=1e-6)
+
+    def test_overwrite_on_second_save(self, tmp_path):
+        store = SkillStore()
+        store.learn_from_interaction(_rand_emb(1), "a", "b", domain="d")
+        store.save(tmp_path / "skills")
+
+        store.learn_from_interaction(_rand_emb(2), "c", "d", domain="d")
+        store.save(tmp_path / "skills")
+
+        store2 = SkillStore()
+        loaded = store2.load(tmp_path / "skills")
+        assert loaded == 2

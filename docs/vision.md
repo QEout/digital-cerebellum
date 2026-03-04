@@ -595,7 +595,47 @@ Phase 7d：OpenClaw 场景验证 ✅ 已完成
   → 可靠性：5/5 级联捕获，90% 浪费预防（20 → 2）
   → AutoRollback：5/5 正确回退方案
   → 学习曲线：第 3 轮 100% 命中率，36ms → 8ms 延迟收敛
+
+Phase 7e：OpenClaw 真实集成测试 ✅ 已完成
+  → MCP HTTP 协议测试：17/17 工具全部通过（Streamable HTTP + SSE）
+  → 74ms/step 平均延迟（含网络开销）
+  → 真实 agent 测试（kimi-k2.5 via OpenClaw gateway）：
+    - Q&A: "法国首都" → "Paris" ✓（SPE=1.367）
+    - 多步推理：3/3 全对，SPE 收敛 1.43→1.08
+    - 工具使用：web_search 请求正常处理
+    - 级联检测：2 次失败后触发，自动生成回退方案
+    - 技能学习：从 agent 回复中学到阿西莫夫三定律
+  → Sidecar 监控模式：agent 无需感知 cerebellum，透明监控
+  → Monitor 本地开销 <1ms/step
+
+Phase 7f：A/B 对照实验 ✅ 已完成
+  → 真实 OpenClaw agent (kimi-k2.5) WITH vs WITHOUT cerebellum
+  → 实验 1 — 重复任务加速：
+    - Round 2-3 完全跳过 LLM（0ms, 0 token）
+    - 总时间 42.5s → 14.0s（3x 加速）
+    - Token 消耗 78,765 → 26,992（66% 节省）
+    - 准确率不变 9/9
+  → 实验 2 — 错误级联恢复：
+    - 无监控：执行 6 步，浪费 1 步，耗时 38.6s
+    - 有监控：执行 2 步即停止，0 浪费，耗时 13.4s（65% 节省）
+  → 实验 3 — 混合负载（50% 重复）：
+    - Token 节省 49%，时间节省 50%
+    - Skill 命中率 50%，准确率 8/8 不变
+  → 结论：PRODUCT VALUE DEMONSTRATED
   → 核心结论：OpenClaw 风格任务上，小脑同时提供 200x 加速和 100% 错误拦截
+
+Phase 7g：工程加固 ✅ 已完成（v0.6.0）
+  → SkillStore 持久化：save()/load()，JSON+numpy 格式，跨会话保留技能
+    - DigitalCerebellum.save() 自动包含 SkillStore
+    - MCP server 启动自动加载、learn_skill 自动保存
+  → CI 加固：conftest.py 自动标记 LLM 依赖测试
+    - pytest markers: llm, slow, integration
+    - CI 运行 275 tests / 3m10s，无网络/LLM 依赖
+  → Sidecar 示例 (examples/sidecar_monitor.py)
+    - A/B 验证过的最佳集成模式，~40 行代码
+    - 演示：skill hit、cascade detection、persistent skills
+    - 第二次运行：3/4 skill hit + 1 blocked（failure memory）
+  → 版本 0.6.0 发布
 ```
 
 ---

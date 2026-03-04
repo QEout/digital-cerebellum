@@ -26,12 +26,17 @@ Digital implementation:
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -296,6 +301,97 @@ class SkillStore:
         for s in sorted_skills[: len(sorted_skills) - self.MAX_SKILLS]:
             del self._skills[s.id]
         self._dirty = True
+
+    # ------------------------------------------------------------------
+    # Persistence
+    # ------------------------------------------------------------------
+
+    def save(self, path: str | Path = ".digital-cerebellum/skills") -> None:
+        """Persist all skills to disk (JSON metadata + numpy embeddings)."""
+        path = Path(path)
+        path.mkdir(parents=True, exist_ok=True)
+
+        skills_data = []
+        embeddings = []
+        for skill in self._skills.values():
+            skills_data.append({
+                "id": skill.id,
+                "input_text": skill.input_text,
+                "response_text": skill.response_text,
+                "tool_calls": skill.tool_calls,
+                "domain": skill.domain,
+                "confidence": skill.confidence,
+                "success_count": skill.success_count,
+                "failure_count": skill.failure_count,
+                "access_count": skill.access_count,
+                "created_at": skill.created_at,
+                "last_used": skill.last_used,
+            })
+            embeddings.append(skill.input_embedding)
+
+        with open(path / "skills.json", "w") as f:
+            json.dump({
+                "version": 1,
+                "similarity_threshold": self.similarity_threshold,
+                "min_confidence": self.min_confidence,
+                "skills": skills_data,
+            }, f, indent=2)
+
+        if embeddings:
+            np.save(path / "embeddings.npy", np.stack(embeddings))
+
+        log.info("Saved %d skills to %s", len(skills_data), path)
+
+    def load(self, path: str | Path = ".digital-cerebellum/skills") -> int:
+        """Load skills from disk. Returns number of skills loaded."""
+        path = Path(path)
+        json_path = path / "skills.json"
+        npy_path = path / "embeddings.npy"
+
+        if not json_path.exists():
+            log.info("No skill checkpoint at %s", json_path)
+            return 0
+
+        with open(json_path) as f:
+            data = json.load(f)
+
+        skills_data = data.get("skills", [])
+        if not skills_data:
+            return 0
+
+        embeddings = None
+        if npy_path.exists():
+            embeddings = np.load(npy_path)
+            if len(embeddings) != len(skills_data):
+                log.warning("Embedding count mismatch (%d vs %d skills), skipping embeddings",
+                            len(embeddings), len(skills_data))
+                embeddings = None
+
+        self._skills.clear()
+        for i, sd in enumerate(skills_data):
+            emb = embeddings[i] if embeddings is not None else np.zeros(384)
+            skill = Skill(
+                id=sd["id"],
+                input_embedding=emb,
+                input_text=sd.get("input_text", ""),
+                response_text=sd.get("response_text", ""),
+                tool_calls=sd.get("tool_calls", []),
+                domain=sd.get("domain", ""),
+                confidence=sd.get("confidence", 0.5),
+                success_count=sd.get("success_count", 0),
+                failure_count=sd.get("failure_count", 0),
+                access_count=sd.get("access_count", 0),
+                created_at=sd.get("created_at", time.time()),
+                last_used=sd.get("last_used", time.time()),
+            )
+            self._skills[skill.id] = skill
+
+        self.similarity_threshold = data.get("similarity_threshold", self.SIMILARITY_THRESHOLD)
+        self.min_confidence = data.get("min_confidence", self.MIN_CONFIDENCE)
+        self._dirty = True
+
+        log.info("Loaded %d skills from %s", len(self._skills), path)
+        return len(self._skills)
 
     # ------------------------------------------------------------------
     # Diagnostics

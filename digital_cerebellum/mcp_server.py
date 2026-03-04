@@ -57,18 +57,25 @@ def _get_cerebellum() -> DigitalCerebellum:
         _cb = DigitalCerebellum(cfg)
         for mz_cls in ALL_MICROZONES:
             _cb.register_microzone(mz_cls())
-        log.info("Digital Cerebellum initialized with microzones: %s",
-                 list(_cb._microzones.keys()))
+        _cb.skill_store.load()
+        log.info("Digital Cerebellum initialized with microzones: %s, skills: %d",
+                 list(_cb._microzones.keys()), len(_cb.skill_store))
     return _cb
 
 
 def _get_monitor() -> StepMonitor:
-    """Lazy-init the step monitor singleton."""
+    """Lazy-init the step monitor singleton.
+
+    Can work standalone (no cerebellum needed) for faster startup,
+    or shares the cerebellum encoder when available.
+    """
     global _monitor
     if _monitor is None:
-        cb = _get_cerebellum()
-        _monitor = StepMonitor(cerebellum=cb)
-        log.info("StepMonitor initialized")
+        if _cb is not None:
+            _monitor = StepMonitor(cerebellum=_cb)
+        else:
+            _monitor = StepMonitor()
+        log.info("StepMonitor initialized (standalone=%s)", _cb is None)
     return _monitor
 
 
@@ -256,6 +263,7 @@ def learn_skill(
     """
     cb = _get_cerebellum()
     skill_id = cb.learn_skill(input_text, response_text, domain=domain)
+    cb.skill_store.save()
     return {"status": "ok", "skill_id": skill_id}
 
 
@@ -630,10 +638,19 @@ def main():
                         help="Use HTTP transport (default: stdio)")
     parser.add_argument("--port", type=int, default=8000,
                         help="HTTP port (default: 8000)")
+    parser.add_argument("--host", type=str, default="0.0.0.0",
+                        help="HTTP bind address (default: 0.0.0.0)")
+    parser.add_argument("--json-response", action="store_true",
+                        help="Return JSON instead of SSE (stateless mode)")
     args = parser.parse_args()
 
     if args.http:
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=args.port)
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+        if args.json_response:
+            mcp.settings.json_response = True
+            mcp.settings.stateless_http = True
+        mcp.run(transport="streamable-http")
     else:
         mcp.run(transport="stdio")
 

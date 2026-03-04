@@ -1,6 +1,6 @@
 [project]
 name = "digital-cerebellum"
-version = "0.5.0"
+version = "0.6.0"
 description = "A cerebellar-inspired cognitive architecture — speed (SkillStore), reliability (StepMonitor + AutoRollback), and real-time control for AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -64,3 +64,8 @@ include = ["digital_cerebellum*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (> 30s)",
+    "llm: marks tests that call external LLM APIs",
+    "integration: marks tests requiring external services",
+]

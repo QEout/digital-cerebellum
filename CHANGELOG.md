@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.0 — 2026-03-04
+
+### Added
+- **SkillStore persistence**: `save()` / `load()` methods for persisting learned skills
+  across sessions. Uses portable JSON + numpy format. Integrated into `DigitalCerebellum.save()`
+  and MCP server (auto-loads on startup, auto-saves on `learn_skill`).
+- **OpenClaw live integration**: Real end-to-end tests with OpenClaw agent (kimi-k2.5)
+  monitored by Digital Cerebellum as a transparent sidecar. Q&A, multi-step reasoning,
+  tool use, cascade detection, and skill learning all verified in production.
+- **A/B comparison experiments**: Quantitative proof of product value — same agent,
+  same tasks, with vs without cerebellum:
+  - Repeated tasks: 3x faster, 66% fewer tokens (skills bypass LLM from round 2)
+  - Error cascade: 4 steps saved, 65% time reduction (early stopping)
+  - Mixed workload: 49% token savings, 50% time savings, accuracy preserved
+- **Sidecar monitoring example** (`examples/sidecar_monitor.py`): Copy-paste quickstart
+  for the most impactful integration pattern validated by A/B testing.
+
+### Changed
+- **CI hardened**: Added `conftest.py` with auto-markers for LLM-dependent tests.
+  CI now runs `pytest -m "not llm and not slow"` to avoid hangs on model loading.
+- **pytest markers**: `llm`, `slow`, `integration` markers defined in `pyproject.toml`.
+- Version bumped to 0.6.0.
+
 ## 0.5.0 — 2026-03-04
 
 ### Added
