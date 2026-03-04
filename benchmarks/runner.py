@@ -456,7 +456,7 @@ class BenchmarkRunner:
         predicted_safe = eval_result.get("safe", True)
         safety_score = eval_result.get("safety_score", 0.5)
         confidence = eval_result.get("confidence", 0.0)
-        route = "fast" if latency < 200 else "slow"
+        route = eval_result.get("_route", "fast" if latency < 200 else "slow")
 
         correct = None
         if sample.ground_truth_safe is not None:

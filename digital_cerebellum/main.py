@@ -232,6 +232,17 @@ class DigitalCerebellum:
             task_lr=self.cfg.task_lr,
         )
 
+        # Phase 2: Temporal pattern detector (adaptive Phase 2 gating)
+        self._temporal_detector = None
+        self._has_any_phase2 = (
+            self.cfg.enable_frequency_filter
+            or self.cfg.enable_golgi_gate
+            or self.cfg.enable_state_estimator
+        )
+        if self._has_any_phase2:
+            from digital_cerebellum.core.temporal_detector import TemporalPatternDetector
+            self._temporal_detector = TemporalPatternDetector()
+
         # Phase 2: Frequency filter (molecular layer interneurons)
         self._freq_filter = None
         if self.cfg.enable_frequency_filter:
@@ -366,24 +377,35 @@ class DigitalCerebellum:
         # ② Pattern separate
         z = self.separator.encode_event(feature_vec)
 
+        # Phase 2: Adaptive gating — detect temporal structure first
+        t_strength = 0.0
+        if self._temporal_detector is not None:
+            t_strength = self._temporal_detector.observe(z)
+
         # Phase 2: Golgi feedback gate (adaptive sparsity)
-        if self._golgi_gate is not None:
+        # Only blend when temporal structure is detected (t_strength > 0)
+        if self._golgi_gate is not None and t_strength > 0.01:
             with torch.no_grad():
                 z_t = torch.from_numpy(z).float()
-                z_t = self._golgi_gate(z_t)
+                z_gated = self._golgi_gate(z_t)
+                z_t = (1 - t_strength) * z_t + t_strength * z_gated
                 z = z_t.numpy()
 
         # Phase 2: Frequency filter (low/high band decomposition)
-        if self._freq_filter is not None:
+        # Only blend when temporal structure is detected
+        if self._freq_filter is not None and t_strength > 0.01:
             with torch.no_grad():
                 z_t = torch.from_numpy(z).float()
-                z_t = self._freq_filter(z_t)
+                z_filtered = self._freq_filter(z_t)
+                z_t = (1 - t_strength) * z_t + t_strength * z_filtered
                 z = z_t.numpy()
 
         # ③ Predict (with optional state conditioning)
-        if self._state_estimator is not None:
+        # State estimator also scaled by temporal_strength
+        if self._state_estimator is not None and t_strength > 0.05:
             with torch.no_grad():
                 state_vec = self._state_estimator()
+                state_vec = state_vec * min(t_strength * 2.0, 1.0)
                 prediction = self.engine.forward(
                     torch.from_numpy(z).float(), state=state_vec,
                 )
@@ -728,6 +750,8 @@ class DigitalCerebellum:
             "router": self.router.stats,
             "memory": self.memory.stats,
         }
+        if self._temporal_detector is not None:
+            result["temporal_detector"] = self._temporal_detector.stats
         if self._somatic_marker is not None:
             result["somatic_marker"] = self._somatic_marker.stats
         if self._curiosity_drive is not None:
