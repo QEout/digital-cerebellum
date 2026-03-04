@@ -52,8 +52,10 @@
 % ============================================================
 \begin{abstract}
 Large Language Model (LLM) agents increasingly operate in high-stakes environments where they invoke external tools, yet every tool call must traverse the full LLM inference pipeline---incurring latencies of 1--10 seconds and offering no guarantee of safety.
+Current approaches to this problem---routing, caching, self-correction, guardrails---all use the LLM itself to simulate functions that biology delegates to the cerebellum, analogous to cerebellar patients compensating with conscious cortical control: slow, expensive, and fragile under load.
 We observe a striking parallel with biological motor control: the \emph{cerebral cortex} plans actions deliberately, while the \emph{cerebellum} provides millisecond-scale predictive corrections through a remarkably uniform computational circuit.
-Inspired by this division of labor, we introduce \cb{}, a complete cerebellar cognitive architecture that gives AI agents a ``body''---the ability to learn skills, execute them autonomously, and perform continuous real-time control.
+Rather than simulating cerebellar functions with the cortex, we build an actual digital cerebellum.
+We introduce \cb{}, a complete cerebellar cognitive architecture that gives AI agents a ``body''---the ability to learn skills, execute them autonomously, and perform continuous real-time control.
 Our architecture maps cerebellar structures to computational primitives across six phases: \emph{granule-cell expansion} via Random Fourier Features, \emph{Purkinje population coding} via K masked linear heads, \emph{climbing-fibre error signals} (sensory, temporal, reward), \emph{deep cerebellar nuclei} as a confidence-gated router, \emph{procedural memory} via a SkillStore that learns to bypass the LLM entirely, six genetically-inspired microzones, and a \emph{micro-operation engine} that achieves 285\,Hz continuous control with 3.5\,ms per step.
 On a comprehensive benchmark, \cb{} achieves 98.2\% safety accuracy (F1\,=\,0.987) with $146\times$ speedup, 25\% task automation after 20 interactions, and forward-model prediction error reduction of 99\% in continuous control tasks.
 The system unifies two operational modes---text-based skill execution and numeric continuous control---under a single cerebellar architecture, validated by 225 unit tests.
@@ -73,7 +75,16 @@ Biological motor systems solved an analogous problem hundreds of millions of yea
 The cerebral cortex deliberates and plans, but the \emph{cerebellum}---containing over half of all neurons in the brain---provides rapid, predictive online corrections using a strikingly uniform circuit known as the \emph{Universal Cerebellar Transform} (UCT)~\citep{schmahmann2019cerebellar,diedrichsen2019universal}.
 This circuit receives a copy of planned actions (\emph{efference copy}), predicts their sensory consequences via a \emph{forward internal model}, and emits error-driven corrections in real time---all without requiring the slow deliberation of the cortex.
 
-We propose \textbf{Digital Cerebellum}, a computational architecture that transplants the cerebellar blueprint into the AI agent stack (\Cref{fig:overview}).
+A growing body of engineering work attempts to address these limitations, but we observe that \textbf{every major approach uses the cortex itself to simulate cerebellar functions}:
+RouteLLM~\citep{ong2024routellm} trains another neural network to route decisions---mimicking the deep cerebellar nuclei;
+GPTCache~\citep{bang2023gptcache} caches past responses---a static approximation of procedural memory;
+chain-of-thought self-correction asks the LLM to verify its own output---the cortex performing forward-model prediction at full inference cost;
+LlamaFirewall~\citep{meta2025llamafirewall} and GuardAgent~\citep{xiang2024guardagent} add safety checks via static rules or additional LLM calls---the cortex simulating cerebellar safety microzones;
+and MemGPT~\citep{packer2023memgpt} manages memory through the LLM itself---the cortex emulating cerebellar state maintenance.
+This is analogous to \emph{cerebellar patients compensating with cortical control}: a patient with cerebellar damage can still walk while carrying a glass of water, but only by devoting full conscious attention to balance---leaving no capacity for conversation, and collapsing at the slightest distraction~\citep{schmahmann2019cerebellar}.
+The result is predictable: slower, more expensive, unable to multitask, and fragile under perturbation.
+
+We propose \textbf{Digital Cerebellum}, a computational architecture that addresses this fundamental problem by building an actual cerebellum rather than simulating one with the cortex (\Cref{fig:overview}).
 The core insight is that an LLM agent's tool-call decisions exhibit the same structure as biological motor commands: a planned action, an expected outcome, and a need for rapid safety validation.
 By mapping six cerebellar structures to lightweight computational primitives, we construct a module that:
 \begin{enumerate}[nosep]
@@ -110,6 +121,16 @@ Our approach is complementary: rather than routing between LLMs or caching past 
 \paragraph{Cerebellum-Inspired Computing.}
 The cerebellum's computational principles have inspired robotics controllers~\citep{porrill2013cerebellum}, reservoir computing architectures~\citep{pinzon2019forward}, and recently, residual control for fault recovery~\citep{wang2025cerebellar}.
 To our knowledge, no prior work has applied the cerebellar forward-model framework to LLM agent safety or tool-call evaluation.
+
+\paragraph{The Cortex-Simulating-Cerebellum Pattern.}
+We observe a recurring architectural anti-pattern across these works: systems use the LLM itself (the cortex) to perform functions that biology dedicates to the cerebellum (\Cref{tab:cortex_vs_cerebellum}).
+RouteLLM uses a trained model to select between LLMs---implementing confidence-based routing (the cerebellar DCN role) with a neural network that requires offline training data.
+GPTCache stores and retrieves past LLM responses by input similarity---approximating procedural memory (the SkillStore role) without generalization.
+Chain-of-thought self-correction asks the LLM to predict and verify its own output---replicating the forward-model prediction loop at full inference cost ($\sim$1--3\,s per verification).
+Guardrail systems add static rules or dedicated LLM evaluators for safety---simulating cerebellar safety microzones without online learning.
+MemGPT manages context through the LLM itself---emulating cerebellar state maintenance at the cost of inference tokens.
+In each case, the ``optimization'' is implemented at cortical cost: $O(\text{LLM inference})$ latency, no online learning, and no cross-session memory.
+Our approach inverts this pattern by implementing dedicated, lightweight circuits that learn online and operate at $O(\text{ms})$ latency---a \emph{true} cerebellum rather than a cortical simulation of one.
 
 % ============================================================
 \section{Biological Background}\label{sec:biology}
@@ -702,11 +723,33 @@ LLM calls & 0 & 0 \\
 % ============================================================
 \section{Discussion}\label{sec:discussion}
 
-\paragraph{Why a cerebellum, not just a cache?}
-Semantic caching (\eg{}, GPTCache) stores and retrieves past LLM responses based on input similarity.
-\cb{} is fundamentally different: it learns a \emph{generative forward model} that can predict outcomes for previously unseen inputs.
-The ablation study confirms this---without learning (the ``no\_learning'' baseline), every decision must traverse the slow path.
-The cerebellum generalizes; a cache merely memorizes.
+\paragraph{Why a dedicated cerebellum, not cortical simulation?}
+\Cref{tab:cortex_vs_cerebellum} formalizes the distinction between our approach and the industry pattern of using the cortex (LLM) to simulate cerebellar functions.
+The analogy to biological cerebellar lesions is instructive: a patient with cerebellar damage can compensate using cortical attention, but this compensation is (1)~slow (hundreds of milliseconds instead of tens), (2)~resource-intensive (consuming working memory that would otherwise support higher cognition), (3)~non-learning (the cortex cannot automate the compensated task through practice), and (4)~fragile (breaks down under cognitive load or time pressure)~\citep{schmahmann2019cerebellar}.
+Current AI agent ``optimizations'' exhibit the same four properties: each self-correction or routing decision costs a full LLM inference ($\sim$1--3\,s), consumes context window tokens, does not improve with repetition, and fails under load.
+\cb{} is fundamentally different because it implements the cerebellar computation \emph{natively}: shallow feedforward networks ($<$5\,ms), online learning from error signals, persistent memory across sessions, and the ability to operate \emph{in parallel} with the LLM rather than consuming its capacity.
+
+\begin{table}[t]
+\centering
+\caption{The cortex-simulating-cerebellum pattern: industry approaches vs.\ \cb{}.}
+\label{tab:cortex_vs_cerebellum}
+\begin{tabular}{p{2.8cm}p{3.2cm}p{2.8cm}p{3.8cm}}
+\toprule
+Cerebellar Function & Industry Approach & Cost & \cb{} \\
+\midrule
+Confidence routing (DCN) & RouteLLM (trained router) & Offline training data & Population coding, online & \\
+Procedural memory & GPTCache (response cache) & Exact match only & SkillStore: generalizes to similar patterns \\
+Forward model (error prediction) & CoT self-correction & Full LLM inference & Shallow MLP, $<$5\,ms \\
+Safety microzones & Guardrails / LLM evaluator & Static rules or LLM call & Online-learning microzones \\
+State maintenance & MemGPT (LLM-managed) & Context tokens & Persistent, zero-token \\
+Motor control & None & --- & 285\,Hz continuous control \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+This distinction is not merely quantitative (faster, cheaper) but \emph{architectural}: just as biology did not evolve a larger cortex to replace the cerebellum, AI systems should not scale up the LLM to compensate for the lack of a dedicated, fast, online-learning subsystem.
+The cerebellum exists because certain computations---prediction, timing, error correction, motor automation---are better served by a different architecture than deliberative reasoning.
+Our work demonstrates that the same principle applies to digital agents.
 
 \paragraph{Fail-safe design.}
 By design, the system errs on the side of caution: FN\,=\,0 across all experiments (no dangerous call was ever approved by the fast path).
@@ -735,7 +778,10 @@ By mapping the full spectrum of cerebellar function---from pattern separation to
 
 The unified \texttt{DigitalBrain} architecture supports two modes: \texttt{think(text)} for text-based skill execution and \texttt{control(env)} for continuous motor control---both sharing the same cerebellar principles but operating at different timescales.
 
-Our work suggests that the century-old insight from Marr, Albus, and Ito---that the cerebellum is a pattern-learning machine---has a natural home in modern AI systems, not as a replacement for large models, but as a fast, adaptive complement that enables the transition from ``answering machines'' to ``experienced actors.''
+Our work reveals a fundamental architectural insight: the AI industry has been using the cortex (LLM) to simulate cerebellar functions---routing, caching, self-correction, safety checking---at cortical cost.
+This is the digital equivalent of cerebellar patients compensating with conscious attention: it works, but slowly, expensively, and fragily.
+Just as biology evolved the cerebellum as a dedicated, fast, online-learning subsystem rather than scaling up the cortex, AI systems need a dedicated cerebellar layer rather than larger or faster LLMs.
+The century-old insight from Marr, Albus, and Ito---that the cerebellum is a universal pattern-learning machine---has a natural home in modern AI, not as a replacement for large models, but as a fast, adaptive complement that enables the transition from ``answering machines'' to ``experienced actors.''
 
 \paragraph{Future work.}
 Immediate directions include (1)~evaluation on real-world agent traces (SWE-bench, WebArena), (2)~connecting the micro-operation engine to real environments (game APIs, Figma, robotic control), (3)~bridging text and control modes for hierarchical ``think then do'' workflows, and (4)~formal convergence analysis of the online forward model under non-stationary distributions.
