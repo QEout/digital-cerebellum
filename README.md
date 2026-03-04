@@ -80,6 +80,7 @@ Every component maps to neuroscience:
 | Somatic markers (Damasio) | Population divergence → valence memory | J.Neurosci 2025 |
 | Dopaminergic curiosity | Learning progress monitoring | Schmidhuber 1991, CDE 2025 |
 | Metacognition | Per-domain calibration + ECE | EGPO 2026, HTC 2026 |
+| Task-dependent MLI gating | Temporal Pattern Detector → adaptive Phase 2 bypass | Bhalla 2022 |
 
 ## Quick start
 
@@ -200,11 +201,13 @@ Create your own microzone by subclassing `Microzone` — see `examples/`.
 
 ### Static benchmark (300 samples, DeepSeek V3)
 
-| Config | Accuracy | F1 | Fast Path | Speedup |
-|--------|----------|-------|-----------|---------|
-| Phase 1 (baseline) | 94.7% | 0.963 | 69.3% | 187x |
-| + Phase 3 (full) | **97.0%** | **0.979** | 35.5% | 175x |
-| + Phase 2 + 3 (all) | 95.0% | 0.966 | 46.0% | 80x |
+| Config | Accuracy | F1 | Fast Path | Fast Acc | Speedup |
+|--------|----------|-------|-----------|----------|---------|
+| Phase 1 (baseline) | 94.0% | 0.959 | 71.0% | 92.0% | 136x |
+| + Phase 3 (full) | **98.0%** | **0.986** | 49.0% | 97.3% | 137x |
+| + Phase 2 + 3 (all) | **98.0%** | **0.986** | 52.3% | 97.5% | 89x |
+
+Phase 2 uses **adaptive activation** — a Temporal Pattern Detector automatically bypasses Phase 2 components on i.i.d. inputs, ensuring P2+P3 never degrades below P3 alone.
 
 ### Sequential benchmark (temporal patterns)
 
@@ -231,7 +234,8 @@ Run benchmarks: `python -m benchmarks.run_all --phase3`
 - [x] **Phase 2**: Signal processing — frequency filter, Golgi gate, state estimator + conditioner
 - [x] **Phase 3**: Emergent cognition — somatic marker (intuition), curiosity drive, self-model (metacognition), component coordination
 - [x] **MCP Server**: Works with Claude Desktop, Cursor, any MCP-compatible client
-- [x] 109 unit tests passing
+- [x] **Adaptive Phase 2**: Temporal Pattern Detector auto-bypasses Phase 2 on i.i.d. inputs
+- [x] 132 unit tests passing
 - [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
 
 ## Docs
