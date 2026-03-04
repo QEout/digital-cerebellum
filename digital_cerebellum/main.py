@@ -393,16 +393,36 @@ class DigitalCerebellum:
         # Phase 3: Somatic marker — gut feeling from head divergence pattern
         gut_feeling = None
         if self._somatic_marker is not None:
-            from digital_cerebellum.emergence.somatic_marker import GutFeeling
             gut_feeling = self._somatic_marker.feel(
                 prediction.head_predictions, domain=microzone_name,
             )
 
-        # ④ Route (gut feeling can override)
+        # Phase 3: Self-model adaptive thresholds (gradual blend)
+        # Don't override until enough observations, then slowly blend
+        # self-model suggestions with base config to avoid oscillation.
+        if self._self_model is not None and self._step > 50:
+            suggested = self._self_model.suggest_thresholds(microzone_name)
+            alpha = min((self._step - 50) / 300.0, 0.4)
+            self.router.threshold_high = (
+                (1 - alpha) * self.cfg.threshold_high
+                + alpha * suggested["threshold_high"]
+            )
+            self.router.threshold_low = (
+                (1 - alpha) * self.cfg.threshold_low
+                + alpha * suggested["threshold_low"]
+            )
+
+        # ④ Route (gut feeling can override, modulated by self-model)
         routing = self.router.route(prediction)
 
         if gut_feeling is not None and gut_feeling.should_override:
-            if routing.decision == RouteDecision.FAST:
+            # Coordination: if self-model says we're competent, suppress override
+            suppress = False
+            if self._self_model is not None:
+                dp = self._self_model._domains.get(microzone_name)
+                if dp and dp.skill_level in ("competent", "expert"):
+                    suppress = True
+            if not suppress and routing.decision == RouteDecision.FAST:
                 routing = routing.__class__(
                     decision=RouteDecision.SLOW,
                     confidence=prediction.confidence,
@@ -548,8 +568,12 @@ class DigitalCerebellum:
         self.router.update_from_reward(rpe)
 
         # Phase 3: Record somatic marker (valence pattern)
+        # Only record after warm-up (step > 30) to avoid polluting
+        # the marker library with noise from the untrained system.
         prediction = ctx.get("prediction")
-        if self._somatic_marker is not None and prediction is not None:
+        if (self._somatic_marker is not None
+                and prediction is not None
+                and self._step > 30):
             self._somatic_marker.record(
                 prediction.head_predictions,
                 valence=actual,

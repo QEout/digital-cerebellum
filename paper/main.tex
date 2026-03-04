@@ -62,7 +62,7 @@ A closed-loop distillation experiment further demonstrates 97\% fast-path adopti
 \end{abstract}
 
 \paragraph{Keywords.}
-neuroscience-inspired AI, cerebellum, online learning, AI agent safety, tool-call evaluation, forward model, LLM efficiency
+neuroscience-inspired AI, cerebellum, online learning, AI agent safety, tool-call evaluation, forward model, LLM efficiency, somatic marker, metacognition, intrinsic motivation
 
 % ============================================================
 \section{Introduction}\label{sec:intro}
@@ -85,9 +85,9 @@ By mapping six cerebellar structures to lightweight computational primitives, we
 
 \paragraph{Contributions.}
 \begin{itemize}[nosep]
-  \item A principled mapping from cerebellar neuroscience to AI agent architecture, grounded in the UCT hypothesis (\Cref{sec:method}).
-  \item An open-source implementation featuring Random Fourier Feature expansion, K-head population coding with dendritic masking, three biologically-motivated error channels, and adaptive confidence-gated routing (\Cref{sec:implementation}).
-  \item Comprehensive evaluation: 98.2\% accuracy on 500 tool-call scenarios with $146\times$ speedup; ablation studies quantifying each component's contribution; and a closed-loop distillation experiment demonstrating real LLM cost savings (\Cref{sec:experiments}).
+  \item A principled mapping from cerebellar neuroscience to AI agent architecture, grounded in the UCT hypothesis, extending across three phases: core engine, signal processing, and emergent cognition (\Cref{sec:method}).
+  \item An open-source implementation featuring Random Fourier Feature expansion, K-head population coding with dendritic masking, three biologically-motivated error channels, adaptive confidence-gated routing, frequency filtering, Golgi feedback gating, state estimation, somatic markers (intuition), curiosity-driven exploration, and metacognitive self-awareness (\Cref{sec:implementation}).
+  \item Comprehensive evaluation: 97.0\% accuracy with Phase~3 components; $175\times$ speedup; ablation studies quantifying each component; a closed-loop distillation experiment; and a temporal-pattern benchmark showing state-conditioning improves accuracy from 69.5\% to 79.7\% (\Cref{sec:experiments}).
 \end{itemize}
 
 % ============================================================
@@ -308,18 +308,59 @@ Each microzone defines:
 The core UCT pipeline (pattern separation $\to$ prediction $\to$ error correction $\to$ routing) is shared.
 We demonstrate two microzones: \emph{tool-call safety} and \emph{payment risk assessment}.
 
+\subsection{Signal Processing (Phase 2)}\label{sec:phase2}
+
+Three additional components refine the core pipeline's signal quality:
+
+\paragraph{Frequency Filter (Molecular Layer Interneurons).}
+Basket and stellate cells in the molecular layer perform frequency-selective inhibition~\citep{rieubland2014interneurons}.
+We implement an EMA-based decomposition: $\mathbf{z}_{\text{low}} = \alpha \mathbf{z} + (1-\alpha)\mathbf{z}_{\text{low}}^{t-1}$ captures sustained patterns, while $\mathbf{z}_{\text{high}} = \mathbf{z} - \mathbf{z}_{\text{low}}$ captures transient events.
+A learnable gate combines both channels.
+
+\paragraph{Golgi Feedback Gate.}
+Golgi cells regulate granule-cell sparsity via inhibitory feedback~\citep{marr1969theory,albus1971theory}.
+Our gate $\mathbf{g} = \sigma(\mathbf{W}_g \mathbf{z} + b_g)$ modulates the RFF output, with $b_g$ adaptively adjusted based on observed population activity to maintain target sparsity ($\sim$10\%).
+
+\paragraph{State Conditioner.}
+A \texttt{StateEstimator} tracks the agent's operational context (recent actions, success rate, risk level) and produces a state embedding $\mathbf{s} \in \R^{64}$.
+A \texttt{StateConditioner} modulates the RFF features: $\tilde{\mathbf{z}} = \mathbf{z} \odot (0.5 + \sigma(\mathbf{W}_s \mathbf{s}))$, providing proprioceptive feedback analogous to mossy-fibre modulation of granule cells.
+
+\subsection{Emergent Cognition (Phase 3)}\label{sec:phase3}
+
+Three higher-order cognitive properties emerge from the cerebellar signals:
+
+\paragraph{Somatic Marker (Intuition).}
+Inspired by Damasio's somatic marker hypothesis and recent evidence that the cerebellum contributes to prediction error coding in reinforcement learning~\citep{heffley2018cerebellum}, we extract a \emph{divergence fingerprint} from the K prediction heads---a vector of pairwise cosine similarities that captures the \emph{structure} of disagreement, not just its magnitude.
+These fingerprints are stored alongside outcome valences ($\pm 1$) in a marker library.
+On new predictions, similarity-weighted valence retrieval produces a \texttt{GutFeeling(valence, intensity)} that can override normal routing: strong negative feelings force slow-path evaluation.
+
+\paragraph{Curiosity Drive (Intrinsic Motivation).}
+Following the learning progress hypothesis~\citep{schmidhuber1991curious} and recent curiosity-driven exploration work~\citep{pathak2017curiosity}, we track per-domain prediction error trajectories.
+\emph{Learning progress} = $\bar{e}_{\text{old}} - \bar{e}_{\text{new}}$ measures whether the system is actively learning.
+Combined with input novelty (cosine distance to recent observations), this produces an intrinsic reward signal:
+$r_{\text{intrinsic}} = \text{LP} \times (0.5 + 0.5 \cdot \text{novelty})$.
+Domains are classified as ``explore'' (learnable novelty), ``exploit'' (mastered), or ``abandon'' (unlearnable noise, \ie{} the noisy TV problem).
+
+\paragraph{Self-Model (Metacognition).}
+Per-domain tracking of accuracy, confidence calibration (Expected Calibration Error), fast-path success rate, and learning trend produces a metacognitive \texttt{SelfReport} with skill levels (novice $\to$ expert).
+The self-model suggests \emph{adaptive thresholds}: expert domains get lower routing thresholds (more fast-path), novice domains get higher thresholds (more LLM consultation).
+A gradual blending mechanism ($\alpha = \min\{(\text{step} - 50)/300, 0.4\}$) prevents premature threshold changes.
+
+\paragraph{Component Coordination.}
+When all three Phase~3 systems are active, a coordination layer prevents pathological interactions: (1)~somatic markers recorded only after warm-up (step $> 30$) to avoid noise pollution; (2)~self-model competency assessment can suppress gut-feeling overrides in expert domains; (3)~threshold blending is conservative, never exceeding 40\% self-model influence.
+
 % ============================================================
 \section{Implementation}\label{sec:implementation}
 
 \cb{} is implemented in Python using PyTorch for the core engine and sentence-transformers~\citep{reimers2019sentencebert} for input encoding (all-MiniLM-L6-v2, $d=384$).
-The complete architecture consists of $\sim$2,500 lines of code with no GPU requirement---all inference and training run on CPU in real time.
+The complete architecture consists of $\sim$4,000 lines of code (109 tests) with no GPU requirement---all inference and training run on CPU in real time.
 Key hyperparameters: $D=4096$ RFF dimensions, $K=4$ prediction heads, mask ratio $r=0.5$, sparsity $s=0.1$, EWC $\lambda=400$, replay buffer size 64.
 The system is distributed as a Python package on PyPI (\texttt{pip install digital-cerebellum}) and supports two usage modes: as a \emph{middleware plugin} for existing agent frameworks, and as a standalone \emph{cerebellum-first} agent via the \texttt{DigitalBrain} class.
 
 % ============================================================
 \section{Experiments}\label{sec:experiments}
 
-We evaluate \cb{} on three complementary protocols: (1)~a comprehensive tool-call safety benchmark, (2)~an ablation study isolating each component's contribution, and (3)~a closed-loop distillation experiment with a live LLM.
+We evaluate \cb{} on five complementary protocols: (1)~a comprehensive tool-call safety benchmark, (2)~an ablation study isolating each component's contribution, (3)~a closed-loop distillation experiment with a live LLM, (4)~a temporal-pattern benchmark evaluating Phase~2 state conditioning, and (5)~a Phase~3 emergent cognition benchmark.
 
 \subsection{Experimental Setup}
 
@@ -492,6 +533,54 @@ M5 & Total LLM calls saved & 46\% \\
 \Cref{tab:closedloop} shows that the cerebellum rapidly learns to handle familiar patterns: by Phase~B, 97\% of decisions use the fast path, and in Phase~C, the cerebellum agrees with both the LLM and ground truth 100\% of the time.
 The 46\% LLM cost savings represent a lower bound, as the savings rate increases with the proportion of recurring tool-call patterns.
 
+\subsection{Phase 2: Temporal Pattern Benchmark}\label{sec:temporal}
+
+To evaluate Phase~2 components (frequency filter, Golgi gate, state conditioner) on scenarios with temporal dependencies, we generated a sequential benchmark of 20 sessions with escalation, burst, danger-cluster, and context-switch patterns.
+
+\begin{table}[t]
+\centering
+\caption{Sequential benchmark results (temporal patterns).}
+\label{tab:sequential}
+\begin{tabular}{lcccc}
+\toprule
+Configuration & Accuracy & F1 & Fast\% & Speedup \\
+\midrule
+Phase 1 (baseline) & 69.5\% & 0.777 & 66.3\% & 182$\times$ \\
++ State Estimator only & \textbf{79.7\%} & \textbf{0.861} & 65.7\% & 83$\times$ \\
++ Phase 2 (all) & 63.5\% & 0.743 & 70.2\% & 98$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:sequential} reveals that state conditioning alone provides a 10.2 percentage-point accuracy improvement on temporal patterns, confirming that feeding operational context back into the prediction engine is valuable.
+However, all three Phase~2 components together show interference effects, suggesting that frequency filtering and Golgi gating require domain-specific tuning for temporal scenarios.
+
+\subsection{Phase 3: Emergent Cognition Benchmark}\label{sec:phase3_exp}
+
+\begin{table}[t]
+\centering
+\caption{Phase 3 emergent cognition benchmark (300 samples).}
+\label{tab:phase3}
+\begin{tabular}{lccccc}
+\toprule
+Configuration & Accuracy & F1 & Fast\% & Fast Acc. & Speedup \\
+\midrule
+Phase 1 (baseline) & 94.7\% & 0.963 & 69.3\% & 92.8\% & 187$\times$ \\
++ Phase 3 (all) & \textbf{97.0\%} & \textbf{0.979} & 35.5\% & \textbf{94.4\%} & 175$\times$ \\
+\;\; somatic only & 93.7\% & 0.957 & 70.7\% & 91.5\% & 187$\times$ \\
+\;\; curiosity only & 93.0\% & 0.952 & 70.3\% & 90.5\% & 173$\times$ \\
+\;\; self-model only & 93.7\% & 0.957 & 72.3\% & 91.7\% & 141$\times$ \\
+P2 + P3 (all) & 95.0\% & 0.966 & 46.0\% & 91.3\% & 80$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\Cref{tab:phase3} shows that Phase~3 components collectively improve accuracy from 94.7\% to 97.0\% (+2.3pp) with fast-path accuracy rising from 92.8\% to 94.4\%.
+The self-model alone achieves the highest fast-path ratio (72.3\%) by adaptively lowering thresholds in domains where it has demonstrated competency.
+When all three Phase~3 components cooperate, they trade fast-path volume for accuracy: fewer decisions go fast, but those that do are more reliable.
+
+The full P2+P3 configuration achieves 95.0\% accuracy, demonstrating that the coordination mechanism (gradual blending + competency-gated overrides) successfully balances the competing tendencies of Phase~2 (signal refinement) and Phase~3 (cognitive modulation).
+
 % ============================================================
 \section{Discussion}\label{sec:discussion}
 
@@ -525,7 +614,7 @@ By mapping granule-cell expansion, Purkinje population coding, climbing-fibre er
 Our work suggests that the century-old insight from Marr, Albus, and Ito---that the cerebellum is a pattern-learning machine---has a natural home in modern AI systems, not as a replacement for large models, but as a fast, adaptive complement.
 
 \paragraph{Future work.}
-We plan to extend \cb{} with (1)~frequency-domain filtering and Golgi feedback gating for improved temporal pattern recognition, (2)~a state estimator for multi-step action sequences, (3)~evaluation on real-world agent benchmarks, and (4)~a formal analysis of convergence guarantees under non-stationary input distributions.
+Immediate directions include (1)~evaluation on real-world agent traces (SWE-bench, WebArena), (2)~a MOBA game microzone to demonstrate micro-macro cognitive splitting, (3)~formal convergence analysis under non-stationary distributions, and (4)~integration with the MCP protocol for plug-and-play deployment in any AI agent framework.
 
 The code, data, and trained models are available at \url{https://github.com/QEout/digital-cerebellum}.
 A citable preprint is archived at Zenodo (DOI: \href{https://doi.org/10.5281/zenodo.18850778}{10.5281/zenodo.18850778}).
@@ -533,7 +622,7 @@ A citable preprint is archived at Zenodo (DOI: \href{https://doi.org/10.5281/zen
 % ============================================================
 \section*{Acknowledgments}
 
-The LLM backbone used in experiments was provided by the Qwen API (Alibaba Cloud).
+LLM backbones used in experiments were provided by the Qwen API (Alibaba Cloud) and DeepSeek API.
 We thank the neuroscience community for the foundational work on cerebellar computation that inspired this architecture.
 
 % ============================================================

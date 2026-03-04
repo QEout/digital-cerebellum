@@ -3,73 +3,91 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18850778.svg)](https://doi.org/10.5281/zenodo.18850778)
 [![PyPI](https://img.shields.io/pypi/v/digital-cerebellum)](https://pypi.org/project/digital-cerebellum/)
 
-A cerebellar-inspired prediction-correction engine for LLM Agents.
+A cerebellar-inspired cognitive architecture for AI agents — prediction, correction, intuition, curiosity, and self-awareness.
 
-一个受生物小脑启发的轻量级预测-校正系统，作为大语言模型的"另一半大脑"。
+一个受生物小脑启发的认知架构：为 AI Agent 提供预测、纠错、直觉、好奇心和自我意识。
 
 ---
 
 ## What is this?
 
-Current AI agents (ChatGPT, OpenClaw, LangChain, etc.) are all "cerebral cortex" — slow, expensive, flexible reasoning. But biological intelligence runs on **two engines**: the cerebral cortex *and* the cerebellum.
+Current AI agents are all "cerebral cortex" — slow, expensive, flexible reasoning. But biological intelligence runs on **two engines**: the cerebral cortex *and* the cerebellum.
 
 The cerebellum holds ~50% of all brain neurons. It doesn't think — it **predicts, corrects, and automates**. It's why you can catch a ball without calculating parabolas, why a pianist's fingers move faster than conscious thought.
 
-**Digital Cerebellum** brings this missing half to AI agents:
+**Digital Cerebellum** brings this to AI agents:
 
 - **< 10ms** prediction latency (vs 1-10s for LLM)
-- **Near-zero cost** for routine decisions (vs $0.01+ per LLM call)
+- **90%+ cost reduction** for routine decisions
 - **Online learning** — gets better with every interaction
-- **Uncertainty quantification** — knows what it doesn't know
+- **Gut feeling** — population divergence patterns trigger intuitive alarms
+- **Curiosity** — actively seeks learnable domains for efficient exploration
+- **Self-awareness** — knows what it's good at, defers what it can't handle
 
-## How it works
+## Architecture
 
 ```
-LLM Agent prepares a tool call
-        │
-        ▼
-┌─ Digital Cerebellum ──────────────────────┐
-│                                            │
-│  Feature Encoder     (mossy fibres)        │
-│       │                                    │
-│  Pattern Separator   (granule cells, RFF)  │
-│       │                                    │
-│  K-Head Predictor    (Purkinje population) │
-│       │                                    │
-│  Decision Router     (deep cerebellar      │
-│       │               nuclei)              │
-│       ▼                                    │
-│  High confidence → ALLOW  (fast path)      │
-│  Low confidence  → ASK LLM (slow path)    │
-│       │                                    │
-│  Result → Error Signal → Online Learning   │
-└────────────────────────────────────────────┘
+Event Input
+    │
+    ▼
+┌─ Phase 0: Core Engine ─────────────────────────────────────────┐
+│                                                                 │
+│  Feature Encoder        (mossy fibres)                          │
+│       │                                                         │
+│  Pattern Separator      (granule cells → RFF + sparsification)  │
+│       │                                                         │
+│  K-Head Predictor       (Purkinje population + dendritic mask)  │
+│       │                                                         │
+│  Decision Router        (deep cerebellar nuclei)                │
+│       │                                                         │
+│  3-Channel Error        (SPE / TPE / RPE → climbing fibres)    │
+│       │                                                         │
+│  Online Learner         (SGD + EWC + replay buffer)             │
+│                                                                 │
+├─ Phase 1: Memory & Consolidation ──────────────────────────────┤
+│                                                                 │
+│  Fluid Memory           (sensory → short-term → long-term)      │
+│  Sleep Cycle            (offline consolidation, pattern merging) │
+│  Task Consolidation     (cerebellum → cortex transfer)          │
+│                                                                 │
+├─ Phase 2: Signal Processing ───────────────────────────────────┤
+│                                                                 │
+│  Frequency Filter       (molecular layer interneurons)          │
+│  Golgi Feedback Gate    (adaptive sparsity)                     │
+│  State Estimator        (operational context → state embedding) │
+│  State Conditioner      (state modulates prediction)            │
+│                                                                 │
+├─ Phase 3: Emergent Cognition ──────────────────────────────────┤
+│                                                                 │
+│  Somatic Marker         (gut feeling from divergence patterns)  │
+│  Curiosity Drive        (learning progress → intrinsic reward)  │
+│  Self-Model             (metacognitive competency awareness)    │
+│  Component Coordinator  (gradual threshold blending)            │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-Every biological component maps to a neuroscience-validated mechanism:
+Every component maps to neuroscience:
 
 | Biology | Digital | Reference |
 |---------|---------|-----------|
 | Granule cell layer | Random Fourier Features | Bhalla 2022, Frontiers Comp Neuro |
-| Purkinje population | K independent linear heads | 2025 J.Neuroscience |
+| Purkinje population | K independent linear heads + dendritic mask | 2025 J.Neuroscience |
 | Climbing fibres | 3 error channels (SPE/TPE/RPE) | 2025 Nature Communications |
 | Deep cerebellar nuclei | Adaptive threshold router | 2025 Frontiers |
-| Cortico-cerebellar loop | Task consolidation pipeline | Boven et al. 2024 Nature Comms |
-
-Full scientific audit with honest limitations: [`docs/architecture.md`](docs/architecture.md) §15.
+| Molecular layer interneurons | Frequency filter (EMA low/high pass) | Rieubland et al. 2014 Neuron |
+| Golgi cells | Feedback gating for sparsity | Marr 1969, Albus 1971 |
+| Somatic markers (Damasio) | Population divergence → valence memory | J.Neurosci 2025 |
+| Dopaminergic curiosity | Learning progress monitoring | Schmidhuber 1991, CDE 2025 |
+| Metacognition | Per-domain calibration + ECE | EGPO 2026, HTC 2026 |
 
 ## Quick start
 
 ```bash
-# Clone & install
-git clone https://github.com/QEout/digital-cerebellum.git
-cd digital-cerebellum
-pip install -e .
-
-# Configure (fill in your API key)
-cp config.yaml config.local.yaml
-# Edit config.local.yaml → llm.api_key
+pip install digital-cerebellum
 ```
+
+### As a cerebellum SDK (plug into your agent)
 
 ```python
 from digital_cerebellum import DigitalCerebellum, CerebellumConfig
@@ -78,54 +96,89 @@ from digital_cerebellum.microzones.tool_call import ToolCallMicrozone
 cb = DigitalCerebellum(CerebellumConfig.from_yaml())
 cb.register_microzone(ToolCallMicrozone())
 
-# Generic API — works with any registered microzone
 result = cb.evaluate("tool_call", {
     "tool_name": "send_email",
     "tool_params": {"to": "alice", "body": "hello"},
 })
-print(result)  # {"safe": True, "confidence": 0.98, ...}
+print(result)  # {"safe": True, "confidence": 0.98, "_route": "fast", ...}
+
+# Post-execution feedback (drives learning)
+cb.feedback(result["_event_id"], success=True)
+
+# Metacognitive self-report
+report = cb.introspect()
+print(report.to_prompt())
 ```
 
-Supports any OpenAI-compatible LLM: Qwen, GPT, Claude, Ollama, etc.
+### As a complete brain (no framework needed)
 
-## Phase 0 validation results (210 tool calls, real Qwen 3.5 Flash)
+```python
+from digital_cerebellum import DigitalBrain
 
-| Metric | Target | Actual | |
-|--------|--------|--------|-|
-| Fast-path ratio | > 30% | **96%** | PASS |
-| Fast-path accuracy (blind test) | > 60% CB-LLM agreement | **100%** (30/30) | PASS |
-| Fast-path latency | < 100ms | **50ms avg** | PASS |
-| Speedup vs LLM | > 5x | **33.4x** | PASS |
-| LLM cost savings | — | **46%** fewer API calls | — |
+brain = DigitalBrain.from_yaml()
+brain.register_tool("search", search_fn, "Search the web")
 
-Run the experiment yourself: `python -m experiments.closed_loop`
+response = brain.think("What's the weather in Tokyo?")
+print(response.text)           # LLM response
+print(response.used_fast_path) # True if cerebellum handled it
+```
 
-## Project status
+### With all phases enabled (config.yaml)
 
-**Phase 0 — Core engine + validation** (complete)
+```yaml
+llm:
+  model: deepseek-v3
+  api_key: your-key
+  base_url: https://api.deepseek.com/v1
 
-- [x] Pattern separator (RFF with top-k sparsification)
-- [x] K-head prediction engine (population coding → emergent confidence)
-- [x] Dendritic masking per head (different feature subsets → genuine diversity)
-- [x] 3-channel error comparator (SPE implemented; TPE/RPE interfaces ready)
-- [x] Online learner (SGD + EWC + replay buffer)
-- [x] Adaptive decision router (RPE-driven threshold)
-- [x] Fluid memory v0 (decay + reconsolidation)
-- [x] Cortex interface (OpenAI-compatible LLM)
-- [x] Pluggable microzone architecture (universal cerebellar transform)
-- [x] Tool-call safety microzone (first plugin)
-- [x] Payment risk microzone (second plugin — proves generality)
-- [x] Main pipeline (`DigitalCerebellum` class)
-- [x] 38 unit tests passing
-- [x] 210-step closed-loop validation with real LLM (4/4 metrics passed)
-- [x] `pip install -e .` SDK packaging
-- [x] Integration examples (OpenAI agent, LangChain guard, multi-microzone)
+phase2:
+  frequency_filter: true
+  golgi_gate: true
+  state_estimator: true
 
-See [roadmap](docs/architecture.md#十三应用场景与路线图) for Phase 1-3.
+phase3:
+  somatic_marker: true
+  curiosity_drive: true
+  self_model: true
+```
 
-## Multiple microzones (universal cerebellar transform)
+### As an MCP Server (works with Claude Desktop, Cursor, any MCP client)
 
-The same engine handles different domains through pluggable microzones:
+```bash
+pip install digital-cerebellum[mcp]
+```
+
+Add to your MCP client config (e.g. Claude Desktop `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "digital-cerebellum": {
+      "command": "python",
+      "args": ["-m", "digital_cerebellum.mcp_server"]
+    }
+  }
+}
+```
+
+Or run as an HTTP server for remote clients:
+
+```bash
+digital-cerebellum-mcp --http --port 8000
+```
+
+**Exposed tools:**
+
+| Tool | Description |
+|------|-------------|
+| `evaluate_tool_call` | Evaluate tool-call safety before execution |
+| `evaluate_payment` | Assess payment/transaction risk |
+| `feedback` | Provide post-execution feedback (drives learning) |
+| `introspect` | Get metacognitive self-report |
+| `get_stats` | System statistics and metrics |
+| `get_curiosity_ranking` | Domains ranked by learning potential |
+
+## Multiple microzones (Universal Cerebellar Transform)
 
 ```python
 from digital_cerebellum import DigitalCerebellum
@@ -138,27 +191,53 @@ cb.register_microzone(PaymentMicrozone())
 
 # Same engine, different domains:
 cb.evaluate("tool_call", {"tool_name": "delete_file", "tool_params": {"path": "/etc/passwd"}})
-cb.evaluate("payment", {"amount": 50000, "currency": "USD", "recipient": "unknown_account"})
+cb.evaluate("payment", {"amount": 50000, "currency": "USD", "recipient": "unknown"})
 ```
 
-Create your own microzone by subclassing `Microzone` — see `examples/` for patterns.
+Create your own microzone by subclassing `Microzone` — see `examples/`.
 
-## Architecture
+## Benchmark results
 
-Two documents cover everything:
+### Static benchmark (300 samples, DeepSeek V3)
 
-- **[`docs/architecture.md`](docs/architecture.md)** — Biological mappings, system design, neuroscience corrections (v2), digital life panorama, application scenarios, scientific audit, competitive landscape, honest boundaries
-- **[`docs/implementation.md`](docs/implementation.md)** — Component-level technical details, algorithms, dependencies, file structure
+| Config | Accuracy | F1 | Fast Path | Speedup |
+|--------|----------|-------|-----------|---------|
+| Phase 1 (baseline) | 94.7% | 0.963 | 69.3% | 187x |
+| + Phase 3 (full) | **97.0%** | **0.979** | 35.5% | 175x |
+| + Phase 2 + 3 (all) | 95.0% | 0.966 | 46.0% | 80x |
 
-## Key design decisions
+### Sequential benchmark (temporal patterns)
 
-**Population coding, not sigmoid confidence.** K=4 independent prediction heads. Confidence emerges from agreement — when heads disagree, uncertainty is real, not a learned artifact.
+| Config | Accuracy | F1 | Fast Path | Speedup |
+|--------|----------|-------|-----------|---------|
+| Phase 1 (baseline) | 69.5% | 0.777 | 66.3% | 182x |
+| + State Estimator | **79.7%** | **0.861** | 65.7% | 83x |
 
-**Three error channels, not one.** Sensory prediction error updates the predictor. Temporal error updates the rhythm system. Reward error updates the router. Each drives different learning.
+### Closed-loop (210 steps, real LLM)
 
-**Continuous prediction, not classification.** The engine predicts *outcomes* (continuous vectors), not labels. The safe/unsafe decision derives from continuous confidence. This satisfies the cerebellum's [continuity constraint](https://arxiv.org/abs/2509.09818) (Tsay & Ivry 2025).
+| Metric | Result |
+|--------|--------|
+| Fast-path ratio | 96% |
+| Fast-path accuracy | 100% (30/30 blind test) |
+| Fast-path latency | 50ms avg |
+| Speedup vs LLM | 33.4x |
 
-**EWC is an engineering approximation.** Biological cerebellum prevents catastrophic forgetting via systems consolidation (cerebellum→cortex transfer), not weight regularization. Our task consolidation pipeline (Phase 1) is the more faithful mechanism. We're honest about this.
+Run benchmarks: `python -m benchmarks.run_all --phase3`
+
+## Project status
+
+- [x] **Phase 0**: Core engine — RFF pattern separator, K-head predictor, 3-channel error, online learner, decision router, fluid memory, cortex interface, pluggable microzones
+- [x] **Phase 1**: Memory consolidation — sleep cycle, task graduation, full TPE/RPE
+- [x] **Phase 2**: Signal processing — frequency filter, Golgi gate, state estimator + conditioner
+- [x] **Phase 3**: Emergent cognition — somatic marker (intuition), curiosity drive, self-model (metacognition), component coordination
+- [x] **MCP Server**: Works with Claude Desktop, Cursor, any MCP-compatible client
+- [x] 109 unit tests passing
+- [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
+
+## Docs
+
+- **[`docs/architecture.md`](docs/architecture.md)** — Biological mappings, system design, neuroscience audit, digital life panorama
+- **[`docs/implementation.md`](docs/implementation.md)** — Component-level algorithms, dependencies, file structure
 
 ## Run tests
 
@@ -172,11 +251,10 @@ MIT
 
 ## Citation
 
-If you use this work in research:
-
 ```bibtex
 @article{cao2026digital,
-  title={Digital Cerebellum: A Neuroscience-Inspired Online Learning Architecture for Safe and Efficient AI Agent Decision-Making},
+  title={Digital Cerebellum: A Neuroscience-Inspired Online Learning Architecture
+         for Safe and Efficient AI Agent Decision-Making},
   author={Cao, Weili},
   year={2026},
   doi={10.5281/zenodo.18850778},

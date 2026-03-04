@@ -783,6 +783,122 @@ Phase 0-1 的接口设计需要预留插入位置。
 
 ---
 
+### ⑫ 涌现认知层 (Emergent Cognition — Phase 3)
+
+三个从小脑信号中涌现的高阶认知属性。
+
+```
+  A. 躯体标记 / 直觉 (Somatic Marker)
+  ──────────────────────────────────────────────────────────────
+
+  依据: Damasio 的躯体标记假说 — 过往经验留下"体感标记"，
+       在意识推理之前就偏置了决策。
+       2025 J.Neuroscience — 小脑通过 cerebello-thalamo-cortical
+       通路发送预测误差信号。
+
+  核心洞察:
+  K 个预测头的分歧不只是"不确定"，其分歧的 *模式* 本身
+  携带了信息。某些分歧模式在过去总是对应坏结果。
+
+  实现:
+  class SomaticMarker:
+      # 1. 从 K 头输出中提取"分歧指纹"
+      #    (pairwise cosine similarity 向量)
+      fingerprint = extract_fingerprint(head_predictions)
+      # → (K*(K-1)/2 * 2) 维向量, K=4 时为 12 维
+
+      # 2. 与存储的效价标记做相似度匹配
+      gut_feeling = feel(head_predictions, domain)
+      # → GutFeeling(valence, intensity, trigger_pattern)
+
+      # 3. 强烈负面直觉可覆盖正常路由
+      if gut_feeling.should_override:  # intensity>0.6 且 valence<-0.3
+          force_slow_path()
+
+  协调机制:
+  • SelfModel 的能力评估可抑制 override（专家域不容易被直觉吓退）
+  • warmup 阶段（前 30 步）不记录 markers，避免噪声污染
+  • 标记强度随时间衰减（sleep 周期中调用 decay）
+
+  文件: digital_cerebellum/emergence/somatic_marker.py
+
+
+  B. 好奇心驱动 (Curiosity Drive)
+  ──────────────────────────────────────────────────────────────
+
+  依据: 多巴胺系统对新奇和预测误差的响应
+       Schmidhuber 1991 — 好奇心即学习进步
+       CDE 2025 — 困惑度 + 值估计方差作为探索奖励
+       LPM 2025 — 奖励模型改进而非预测误差本身
+
+  核心洞察:
+  大预测误差 ≠ 值得探索。关键信号是"误差在下降"（学习进步）。
+  高误差 + 高学习进步 → "这很有趣，继续探索"
+  高误差 + 零进步   → "这是噪声，别浪费资源"（noisy TV 问题）
+  低误差 + 稳定     → "已经掌握了，去探索新的"
+
+  实现:
+  class CuriosityDrive:
+      # 每域跟踪误差轨迹
+      tracker.record(error)
+
+      # 学习进步 = mean(旧窗口) - mean(新窗口)
+      lp = tracker.learning_progress  # > 0 改善, < 0 退化
+
+      # 新奇度 = 当前输入与近期输入的平均余弦距离
+      novelty = compute_novelty(feature_vec)
+
+      # 内在奖励 = 学习进步 × 新奇度加成
+      intrinsic_reward = lp * (0.5 + 0.5 * novelty)
+
+      # 分类: "explore" | "exploit" | "abandon"
+
+  输出:
+  • CuriositySignal(novelty, learning_progress, intrinsic_reward, recommendation)
+  • get_exploration_ranking() → 按学习潜力排序的域列表
+
+  文件: digital_cerebellum/emergence/curiosity_drive.py
+
+
+  C. 自我模型 / 元认知 (Self-Model)
+  ──────────────────────────────────────────────────────────────
+
+  依据: 元认知判断反映了误差历史的 recency-weighted 平均
+       (Metacognitive Judgments 2023)
+       EGPO 2026 — 熵校准框架
+       HTC 2026 — 轨迹级置信度校准
+
+  核心洞察:
+  小脑的多微区各自追踪不同功能域的误差/置信度，
+  汇总后形成隐式自我模型："我擅长支付评估但不擅长代码安全"
+
+  实现:
+  class SelfModel:
+      # 每域追踪: 准确率、置信度校准误差 (ECE)、快路径比例
+      record(domain, correct, confidence, route)
+
+      # 生成自我报告
+      report = introspect()
+      # → SelfReport(competencies, strengths, weaknesses, recommendation)
+      # 能力级别: novice → learning → competent → expert
+
+      # 建议自适应路由阈值
+      thresholds = suggest_thresholds(domain)
+      # expert → threshold_high=0.75  (更信任快路径)
+      # novice → threshold_high=0.98  (保守，多问大脑)
+
+  协调 — 渐进式混合:
+  # 前 50 步: 使用基线配置阈值
+  # 之后: alpha = min((step-50)/300, 0.4)
+  # threshold = (1-alpha)*base + alpha*suggested
+  # 防止自我模型在数据不足时做出过激调整
+
+  文件: digital_cerebellum/emergence/self_model.py
+  ──────────────────────────────────────────────────────────────
+```
+
+---
+
 ### ⑪ 流体记忆系统 (Fluid Memory System)
 
 **目标**: 实现有衰减、再巩固、抽象化、睡眠周期的生物级记忆系统。
@@ -1108,55 +1224,62 @@ Phase 0 的目标是用最少的代码验证核心假设：
 ```
   digital-cerebellum/
   ├── docs/
-  │   ├── architecture.md              # 架构设计
+  │   ├── architecture.md              # 架构设计 + 神经科学映射
   │   └── implementation.md            # 实现指南（本文档）
-  ├── digital_cerebellum/            # pip install -e . → import digital_cerebellum
+  ├── digital_cerebellum/              # pip install digital-cerebellum
+  │   ├── __init__.py                  # 包入口，导出核心 API
+  │   ├── main.py                      # DigitalCerebellum 主管线
+  │   ├── brain.py                     # DigitalBrain（完整认知架构）
   │   ├── core/                        # 核心计算原语
-  │   │   ├── pattern_separator.py     # ② 模式分离器 (RFF + Golgi 门控)
-  │   │   ├── prediction_engine.py     # ③ 多头预测引擎 (PyTorch, K=4~8)
-  │   │   ├── error_comparator.py      # ⑦ 三通道误差比较器
-  │   │   ├── online_learner.py        # ⑧ 多位点在线学习 (SGD + EWC)
+  │   │   ├── types.py                 # 核心数据类型
+  │   │   ├── feature_encoder.py       # 特征编码器（苔状纤维）
+  │   │   ├── pattern_separator.py     # ② 模式分离器 (RFF + top-k)
+  │   │   ├── prediction_engine.py     # ③ K头预测引擎 + 树突掩码 + StateConditioner
+  │   │   ├── error_comparator.py      # ⑦ 三通道误差比较器 (SPE/TPE/RPE)
+  │   │   ├── online_learner.py        # ⑧ 在线学习 (SGD + EWC + replay)
+  │   │   ├── microzone.py             # 微区基类 + 学习信号
   │   │   ├── frequency_filter.py      # ⑩A 频率滤波层 (Phase 2)
-  │   │   ├── state_estimator.py       # ⑩C 状态估计器 (Phase 2)
-  │   │   └── types.py                 # 核心数据类型
+  │   │   ├── golgi_gate.py            # ⑩B Golgi 反馈门控 (Phase 2)
+  │   │   └── state_estimator.py       # ⑩C 状态估计器 (Phase 2)
   │   ├── routing/
-  │   │   └── decision_router.py       # ④ 主动计算路由器 (DCN)
-  │   ├── perception/
-  │   │   ├── event_bus.py             # ① 感知层 - 事件总线
-  │   │   └── adapters/                # 各类事件源适配器
-  │   │       ├── toolcall.py          # LLM tool_call 拦截适配器
-  │   │       ├── message.py
-  │   │       ├── filesystem.py
-  │   │       └── schedule.py
+  │   │   └── decision_router.py       # ④ 决策路由器 (DCN)
   │   ├── cortex/
-  │   │   ├── cortex_interface.py      # ⑥ 皮层接口
+  │   │   ├── cortex_interface.py      # ⑥ 皮层接口 (LLM)
   │   │   └── consolidation.py         # 任务巩固流水线
   │   ├── memory/
-  │   │   ├── fluid_memory.py          # 流体记忆核心 (衰减/再巩固/检索)
-  │   │   ├── sleep_cycle.py           # 睡眠周期 (巩固/抽象/蒸馏/清理)
-  │   │   ├── store.py                 # SQLite 存储层
-  │   │   └── action_dictionary.py     # 动作词典
-  │   ├── rhythm/
-  │   │   └── rhythm_engine.py         # ⑨ 节律系统
-  │   ├── microzone/
-  │   │   ├── base.py                  # 微区基类
-  │   │   ├── toolcall_eval.py         # tool_call 预评估微区 (Phase 0)
-  │   │   ├── chat.py                  # 对话微区 (Phase 1)
-  │   │   ├── file.py                  # 文件微区 (Phase 1)
-  │   │   └── moba.py                  # MOBA 微操微区 (Phase 2)
-  │   ├── api/
-  │   │   └── server.py                # FastAPI 服务 (Phase 1)
-  │   └── main.py                      # 主入口
-  ├── notebooks/
-  │   └── experiment.ipynb             # Phase 0 实验笔记本
+  │   │   ├── fluid_memory.py          # 流体记忆 (衰减/再巩固/检索)
+  │   │   └── sleep_cycle.py           # 睡眠周期 (巩固/抽象/蒸馏)
+  │   ├── microzones/                  # 可插拔微区（通用小脑变换）
+  │   │   ├── tool_call.py             # tool_call 安全评估微区
+  │   │   └── payment.py               # 支付风险微区
+  │   └── emergence/                   # Phase 3: 涌现认知
+  │       ├── __init__.py
+  │       ├── somatic_marker.py        # ⑫A 躯体标记 / 直觉
+  │       ├── curiosity_drive.py       # ⑫B 好奇心驱动
+  │       └── self_model.py            # ⑫C 自我模型 / 元认知
+  ├── benchmarks/
+  │   ├── dataset.py                   # 统一数据集格式
+  │   ├── sequential_dataset.py        # 时序场景数据集
+  │   ├── runner.py                    # Benchmark 运行器 + 消融配置
+  │   ├── run_all.py                   # 全量 benchmark 入口
+  │   └── results/                     # 保存的 benchmark 结果
+  ├── experiments/
+  │   └── closed_loop.py               # 闭环实验（真实 LLM 蒸馏）
+  ├── examples/
+  │   ├── openai_agent.py              # OpenAI agent 集成示例
+  │   ├── langchain_guard.py           # LangChain 工具守卫示例
+  │   ├── multi_microzone.py           # 多微区示例
+  │   └── brain_demo.py                # DigitalBrain 完整演示
   ├── tests/
-  │   ├── test_pattern_separator.py
-  │   ├── test_prediction_engine.py
-  │   ├── test_online_learner.py
-  │   ├── test_fluid_memory.py
-  │   ├── test_error_comparator.py
-  │   └── test_integration.py
-  ├── requirements.txt
-  ├── pyproject.toml
+  │   ├── test_core.py                 # 核心组件测试 (23)
+  │   ├── test_microzones.py           # 微区测试 (15)
+  │   ├── test_phase1.py               # Phase 1 测试 (17)
+  │   ├── test_phase2.py               # Phase 2 测试 (18)
+  │   └── test_phase3.py               # Phase 3 测试 (33)
+  ├── paper/
+  │   ├── main.tex                     # 论文 LaTeX 源码
+  │   └── references.bib               # 参考文献
+  ├── pyproject.toml                   # 包配置
+  ├── LICENSE                          # MIT
   └── README.md
 ```

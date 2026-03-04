@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "digital-cerebellum": {
+      "command": "python",
+      "args": ["-m", "digital_cerebellum.mcp_server"],
+      "env": {
+        "HF_HUB_OFFLINE": "1"
+      }
+    }
+  }
+}
