@@ -636,18 +636,88 @@ Phase 7g：工程加固 ✅ 已完成（v0.6.0）
     - 演示：skill hit、cascade detection、persistent skills
     - 第二次运行：3/4 skill hit + 1 blocked（failure memory）
   → 版本 0.6.0 发布
+
+Phase 7h：完整小脑 API ✅ 已完成（22 MCP 工具）
+  → 5 大生物学能力全部通过 MCP 暴露：
+    1. 实时校准 — monitor_before_step/after_step（含记忆注入）
+    2. 技能学习 — learn_skill 支持 tool_calls 多步操作序列回放
+    3. 流体记忆 — store_memory/retrieve_memories（语义检索+再巩固）
+    4. 直觉感知 — get_gut_feeling（体感标记，预理性风险评估）
+    5. 自主探索 — get_exploration_suggestions（好奇心驱动探索建议）
+  → 附加：run_sleep_cycle（离线巩固），monitor_after_step 自动存储经验
+  → 流体记忆不再是"只写不读"：before_step 注入相关记忆，after_step 自动存储
+  → 22 工具 = Safety(5) + Speed(3) + Reliability(5) + Memory(3) + Intuition(1) + Exploration(1) + Learning(1) + Meta(3)
+  → SNN（脉冲神经网络）作为远期方向记录：可替换 MicroOpEngine 前向模型
+```
+
+---
+
+## 十一、战略路线图：从中间件到认知基础设施
+
+### 竞争格局定位（2026.03 调研）
+
+**全球唯一的完整小脑实现。** 在"小脑架构 × LLM Agent"交叉点无直接竞品。
+
+| 维度 | 最强竞品 | 我们的差异 |
+|------|---------|-----------|
+| 错误级联检测 | MASC (ICLR 2026) — AUC-ROC +8.47% | 预测性拦截（before_step），非事后检测 |
+| 技能学习/缓存 | ProcMEM (arXiv 2026.02) — Skill-MDP | 已产品化（pip + MCP + 持久化），支持多步序列 |
+| 认知架构 | SOFAI (Nature npj AI 2025) — 快慢系统 | 完整生物映射（非通用认知架构），285Hz 微操 |
+| 自组织记忆 | Nemori (arXiv 2025) — 预测-校准 | 全管道（记忆+技能+直觉+探索），非只做记忆 |
+| Agent 安全 | NeMo Guardrails (NVIDIA) | 行为安全（序列级），非内容安全（输入/输出级）|
+
+### OpenClaw 集成战略
+
+**关键发现**：OpenClaw（250K+ GitHub stars）已具备完整桌面 GUI 能力：
+- 截屏：跨平台（macOS screencapture / Linux gnome-screenshot / Windows nircmd）
+- 鼠标：点击、拖拽、移动到坐标（17 种标准动作）
+- 键盘：打字（12ms 间隔）、组合键
+- 屏幕理解：screen-vision（macOS Vision OCR，返回元素坐标）
+- 窗口管理：聚焦、最小化、最大化、移动、调整大小
+
+**OpenClaw = 眼睛 + 手。Digital Cerebellum = 小脑。**
+- 当前：截屏 → LLM 推理（2-5s）→ 执行 = 每步 2-5 秒
+- 加入小脑：截屏 → 小脑检查 → 已学会: 3ms 直接执行 / 未学会: LLM 处理 + 小脑学习
+- 效果：第 1 次 = LLM 速度，第 10 次 = 小脑速度（100x+）
+
+### 路线图
+
+```
+Phase 8a — ClawHub 发布 ✅（2026-03-05 完成）
+  发布 Digital Cerebellum 为 OpenClaw MCP skill
+  一个小脑，一次安装，所有能力自动生效——不拆零件卖
+  Agent 插上小脑后自然获得：学过的事秒做、没学过的事不蒙做、记住经验、有直觉、会探索
+  交付物：skill.yaml + SKILL.md + run.sh + clawhub_demo.py
+  目标：100 个外部用户，收集反馈
+
+Phase 8b — 连续 GUI 控制 Demo（目标：投资人 / 论文）
+  ScreenStateEncoder：截屏/OCR → 状态向量（对接 MicroOpEngine）
+  GUIActionSpace：连续鼠标/键盘动作空间
+  Demo：OpenClaw 在 Figma/aim trainer 中学会操作，第 10 次比第 1 次快 100x
+  可选：ScreenDrag benchmark 对比 ShowUI-π
+
+Phase 8c — 标准 Benchmark 验证（目标：学术认可）
+  在 TheAgentCompany / WebArena / OSWorld 上评测
+  消融实验：去掉 SkillStore / StepMonitor / FluidMemory 各自贡献
+  对比 MASC / ProcMEM
+  投稿 NeurIPS / ICML Agent workshop
+
+Phase 9 — 下一代架构（远期）
+  SNN（脉冲神经网络）替换 MicroOpEngine 前向模型
+  → Purkinje 细胞脉冲编码、STDP 学习、neuromorphic hardware
+  → 更低功耗、更精确时序、更接近真实小脑
 ```
 
 ---
 
 ## 十二、一句话总结
 
-**Digital Cerebellum 是一个通用小脑中间件。**
-**任何 Agent 框架插入它，就能获得：预测性错误拦截、技能自动化、精密控制。**
-**核心价值：让 Agent 既快又稳。**
-**快——学过的模式 <10ms 直接执行，不调 LLM（100x 加速）。**
-**稳——没学过的步骤实时预测后果，第一时间拦截错误级联（100% 捕获率）。**
-**桌面自动化是第一个场景，但不是唯一的场景。**
+**Digital Cerebellum 是给 AI Agent 补上的小脑。**
+**LLM 是皮层——它思考。小脑——让它行动。**
+**当前所有 Agent 都是"纯皮层"架构：每个动作都要想 2-5 秒。**
+**加上小脑：学过的动作 <10ms 直接执行，没学过的动作实时预测后果。**
+**22 个 MCP 工具——不是 22 个零件，是一个器官的 API。装上就生效。**
+**OpenClaw 是眼和手，Digital Cerebellum 是小脑。组合起来就是完整的智能体。**
 
 ---
 
@@ -660,7 +730,8 @@ Phase 7g：工程加固 ✅ 已完成（v0.6.0）
 | v3 | "让 Agent 不翻车" | 对了，但只说了可靠性，忽略了速度优势 |
 | v4 | "通用小脑中间件" | 核心是小脑本身，场景只是示例 |
 | v5 | "行业都在用皮层模拟小脑，我们才是真正的小脑" | 架构范式转换，但"不是更快"的说法有误 |
-| **v6** | **"既快又稳——学过的事秒做，没学过的事不蒙做"** | **当前叙事——速度+可靠性双引擎** |
+| v6 | "既快又稳——学过的事秒做，没学过的事不蒙做" | 速度+可靠性双引擎，但仍在说"中间件" |
+| **v7** | **"LLM 是皮层，我们补上小脑——让 Agent 从'逐步思考'进化到'实时行动'"** | **当前叙事——认知架构级创新，不是工具** |
 
 ## 附录 B：元反思
 

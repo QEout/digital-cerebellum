@@ -1,0 +1,41 @@
+# skill.yaml - Digital Cerebellum for OpenClaw
+name: digital-cerebellum
+version: 0.6.0
+author: QEout
+description: >
+  The missing cerebellum for your AI agent. LLMs think — this acts.
+  One install gives your agent 5 biological capabilities: learned actions
+  execute in <10ms (not 2-5s), errors get caught before they cascade,
+  experiences persist across sessions, gut feelings warn of danger,
+  and curiosity drives exploration. 22 MCP tools, zero config.
+license: MIT
+
+permissions:
+  - network
+  - filesystem
+  - shell
+
+config:
+  llm_api_key:
+    type: string
+    required: false
+    description: "Optional LLM API key for slow-path evaluation (DeepSeek, OpenAI, etc). Without it, the cerebellum runs in pure fast-path mode — still provides skill learning, monitoring, memory, and intuition."
+    secret: true
+  data_dir:
+    type: string
+    required: false
+    default: ".digital-cerebellum"
+    description: "Directory for persisting learned skills and memories across sessions"
+
+entryPoint:
+  type: shell
+  path: run.sh
+
+triggers:
+  keywords:
+    - "cerebellum"
+    - "learn this"
+    - "remember this"
+    - "gut feeling"
+    - "what do you know"
+    - "sleep cycle"

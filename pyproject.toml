@@ -1,7 +1,7 @@
 [project]
 name = "digital-cerebellum"
-version = "0.6.0"
-description = "A cerebellar-inspired cognitive architecture — speed (SkillStore), reliability (StepMonitor + AutoRollback), and real-time control for AI agents"
+version = "0.6.1"
+description = "The missing cerebellum for AI agents — one organ, not a toolkit. Install it and your agent learns patterns, catches errors, builds intuition, and explores autonomously."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

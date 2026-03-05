@@ -3,21 +3,28 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.18850778.svg)](https://doi.org/10.5281/zenodo.18850778)
 [![PyPI](https://img.shields.io/pypi/v/digital-cerebellum)](https://pypi.org/project/digital-cerebellum/)
 
-A cerebellar-inspired cognitive architecture that makes AI agents reliable — predictive error interception, skill learning, real-time micro-operations, and experience accumulation.
+**LLMs are the cortex — they think. This is the cerebellum — it acts.**
 
-一个受生物小脑启发的认知架构：通过预测性错误拦截、技能学习、实时微操和经验积累，让 AI Agent 不翻车。
+Every AI agent today is "cortex-only": 2-5 seconds of thinking per action. Add a cerebellum: learned actions execute in <10ms, unknown actions get real-time error prediction. 22 MCP tools exposing 5 biological capabilities: real-time calibration, skill learning, fluid memory, intuition, and curiosity-driven exploration.
+
+**LLM 是皮层——它思考。这是小脑——让它行动。**
+
+当前所有 AI Agent 都是"纯皮层"架构：每个动作要想 2-5 秒。加上小脑：学过的动作 <10ms 执行，没学过的动作实时预测后果。22 个 MCP 工具，5 大生物学能力：实时校准、技能学习、流体记忆、直觉感知、自主探索。
 
 ---
 
 ## The Problem
 
-AI agents are fragile. CMU's TheAgentCompany benchmark: best agent success rate is **24%**. 76% of failures come from **error cascading** — one step goes wrong, every subsequent step fails, and the agent doesn't even notice.
+AI agents are **all cortex, no cerebellum**. Every action requires full LLM reasoning: screenshot → think → act, 2-5 seconds per step. This means:
+- **Can do**: click buttons, fill forms (discrete, slow)
+- **Cannot do**: drag-and-drop, real-time control, continuous interaction (needs <50ms)
+- **Fragile**: CMU benchmark — best agent success rate is **24%**, 76% of failures from error cascading
+
+A pianist doesn't think about each finger movement — the cerebellum handles it. Current agents think about *every* click.
 
 ## The Solution
 
-Biological brains don't have this problem. When you trip while carrying a glass of water, your **cerebellum** detects the posture deviation in 50ms and corrects — before your cortex even knows something happened.
-
-**Digital Cerebellum** does the same for AI agents — making them both **faster** and **more reliable**:
+**Digital Cerebellum** adds the missing organ — making agents both **faster** and **more reliable**:
 
 **Faster** (learned patterns bypass LLM):
 - **< 10ms** fast-path execution vs 1-10s for LLM — **100x+ speedup**
@@ -103,7 +110,7 @@ Event Input
 ├─ Phase 8: Agent Integrations ────────────────────────────────────┤
 │                                                                 │
 │  LangChain Callback     (CerebellumCallback, CerebellumPause)  │
-│  MCP Server             (17 tools, stdio + HTTP transport)      │
+│  MCP Server             (22 tools, stdio + HTTP transport)      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -269,27 +276,42 @@ Or run as an HTTP server for remote clients:
 digital-cerebellum-mcp --http --port 8000
 ```
 
-**Exposed tools (17):**
+### With OpenClaw (one command)
 
-| Tool | Category | Description |
-|------|----------|-------------|
-| `evaluate_tool_call` | Safety | Evaluate tool-call safety before execution |
-| `evaluate_payment` | Safety | Assess payment/transaction risk |
-| `evaluate_shell_command` | Safety | Evaluate shell command safety (rm, sudo, etc.) |
-| `evaluate_file_operation` | Safety | Evaluate filesystem operation safety |
-| `evaluate_api_call` | Safety | Evaluate external API call safety |
-| `learn_skill` | Speed | Teach the cerebellum a new skill from an interaction |
-| `match_skill` | Speed | Check if the cerebellum can handle a query directly |
-| `skill_feedback` | Speed | Reinforce/weaken a learned skill |
-| `monitor_before_step` | Reliability | Predict outcome before agent executes an action |
-| `monitor_after_step` | Reliability | Compare actual outcome, detect error cascades |
-| `monitor_rollback_plan` | Reliability | Get auto-rollback plan after cascade detection |
-| `monitor_reset` | Reliability | Reset monitor for a new task (keeps learned knowledge) |
-| `monitor_status` | Reliability | Get forward model stats, cascade state, failure count |
-| `feedback` | Learning | Post-execution feedback (drives online learning) |
-| `introspect` | Meta | Metacognitive self-report |
-| `get_stats` | Meta | System statistics and metrics |
-| `get_curiosity_ranking` | Meta | Domains ranked by learning potential |
+```bash
+openclaw skills install digital-cerebellum
+```
+
+Your agent now has a cerebellum. No config, no prompt changes — it monitors every step as a transparent sidecar, learns patterns, catches errors, builds intuition, explores gaps. See [SKILL.md](SKILL.md) for the full story.
+
+---
+
+**22 MCP tools** — the API surface of one organ, not 22 separate products:
+
+| Tool | What it does |
+|------|-------------|
+| `monitor_before_step` | Predict outcome + inject relevant memories |
+| `monitor_after_step` | Compare to reality, detect cascades, auto-store experience |
+| `monitor_rollback_plan` | Get rollback plan after cascade detection |
+| `monitor_reset` | Reset for a new task (keeps learned knowledge) |
+| `monitor_status` | Forward model stats, cascade state |
+| `learn_skill` | Teach a pattern (text + multi-step tool-call sequences) |
+| `match_skill` | Check for known pattern, replay action sequences |
+| `skill_feedback` | Reinforce or weaken a learned pattern |
+| `store_memory` | Store experience in episodic memory |
+| `retrieve_memories` | Semantic recall with biological reconsolidation |
+| `run_sleep_cycle` | Offline consolidation: decay, promote, merge, prune |
+| `get_gut_feeling` | Pre-rational risk signal from somatic markers |
+| `get_exploration_suggestions` | Curiosity-driven recommendations |
+| `evaluate_tool_call` | Tool-call safety evaluation |
+| `evaluate_payment` | Payment/transaction risk assessment |
+| `evaluate_shell_command` | Shell command safety (rm, sudo, etc.) |
+| `evaluate_file_operation` | Filesystem operation safety |
+| `evaluate_api_call` | External API call safety |
+| `feedback` | Post-execution feedback (drives online learning) |
+| `introspect` | Metacognitive self-report |
+| `get_stats` | System statistics and metrics |
+| `get_curiosity_ranking` | Domains ranked by learning potential |
 
 ## 6 Built-in Microzones (Universal Cerebellar Transform)
 
@@ -497,13 +519,15 @@ Run benchmarks: `python -m benchmarks.run_all --phase3`
 - [x] **Phase 5**: Generic microzone framework — 6 built-in microzones (tool_call, payment, shell_command, file_operation, api_call, response_prediction)
 - [x] **Phase 6**: Micro-operation engine — StateEncoder, ForwardModel, ActionEncoder, MicroOpEngine (285Hz, 3.5ms/step, SPE↓99%)
 - [x] **Phase 7**: Step Monitor — StepMonitor, ErrorCascadeDetector, FailureMemory, save/load, 100% cascade detection across 7 domains
-- [x] **MCP Server**: 17 tools (safety + speed + reliability + meta), works with Claude Desktop, Cursor, any MCP client
+- [x] **MCP Server**: 22 tools (safety + speed + reliability + memory + intuition + exploration + meta), works with Claude Desktop, Cursor, OpenClaw, any MCP client
 - [x] **LangChain integration**: `CerebellumCallback` — one-line drop-in for any LangChain agent
 - [x] **AutoRollback**: Cascade detection → automatic rollback plan computation
 - [x] **Reliability Benchmark**: 7 scenarios, 71% waste prevention, 2.3-step avg detection delay
 - [x] **OpenClaw Benchmark**: 5 desktop automation scenarios — 204x speedup, 5/5 cascade detection, 5/5 correct rollbacks
 - [x] **OpenClaw Live Integration**: Real agent (kimi-k2.5) monitored via sidecar StepMonitor — Q&A, reasoning, tool use, cascade detection, skill learning all verified
 - [x] **SkillStore Persistence**: Skills survive restarts — JSON+numpy save/load, auto-integrated with MCP server
+- [x] **Full Cerebellum API**: All 5 biological capabilities exposed via 22 MCP tools — one organ, not a toolkit
+- [x] **ClawHub Skill**: `openclaw skills install digital-cerebellum` — one command, zero config, transparent sidecar
 - [x] 275 unit tests passing (+ 26 LLM-dependent deselected in CI)
 - [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
 

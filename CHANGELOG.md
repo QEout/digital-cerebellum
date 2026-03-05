@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.1 — 2026-03-05
+
+### Added
+- **ClawHub Skill release**: `openclaw skills install digital-cerebellum` — one command,
+  zero config, transparent sidecar. Published as a unified organ, not a toolkit.
+  - `skill.yaml` manifest (ClawHub metadata)
+  - `SKILL.md` (unified cerebellum narrative for marketplace listing)
+  - `run.sh` entry point (auto-creates venv, launches MCP server)
+  - `examples/clawhub_demo.py` — end-to-end demo: learn → accelerate → catch cascade
+
+### Changed
+- **Narrative correction**: marketing no longer lists "StepMonitor + SkillStore + Fluid Memory"
+  as separate products. The cerebellum is one organ; all 22 tools are the API surface of
+  that organ, not 22 separate features.
+- Updated README.md with ClawHub install section and unified tool table.
+- Updated `docs/vision.md` Phase 8a description to reflect unified positioning.
+
 ## 0.6.0 — 2026-03-04
 
 ### Added
@@ -17,7 +34,21 @@
 - **Sidecar monitoring example** (`examples/sidecar_monitor.py`): Copy-paste quickstart
   for the most impactful integration pattern validated by A/B testing.
 
+- **Fluid Memory MCP tools**: `store_memory` and `retrieve_memories` — episodic memory
+  with semantic retrieval and biological reconsolidation. `monitor_after_step` auto-stores
+  outcomes; `monitor_before_step` injects relevant memories into predictions.
+- **Sleep Cycle MCP tool**: `run_sleep_cycle` — offline consolidation (decay weak memories,
+  promote strong ones, merge/prune skills). Call between sessions for lean memory.
+- **Gut Feeling MCP tool**: `get_gut_feeling` — somatic marker intuition. Returns pre-rational
+  risk assessment (valence, intensity, alarm/positive/uneasy) based on past experience patterns.
+- **Exploration Suggestions MCP tool**: `get_exploration_suggestions` — curiosity-driven
+  actionable recommendations ("explore domain X", "investigate Y", "abandon Z").
+- **Multi-step skill sequences**: `learn_skill` now accepts `tool_calls` parameter for
+  storing complete action sequences; `match_skill` returns `tool_calls` for replay.
+
 ### Changed
+- **MCP server expanded to 22 tools** (was 17): +5 new tools for memory, sleep, intuition,
+  exploration, and multi-step skills. All 5 biological cerebellum capabilities now exposed.
 - **CI hardened**: Added `conftest.py` with auto-markers for LLM-dependent tests.
   CI now runs `pytest -m "not llm and not slow"` to avoid hangs on model loading.
 - **pytest markers**: `llm`, `slow`, `integration` markers defined in `pyproject.toml`.

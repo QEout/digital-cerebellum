@@ -244,6 +244,7 @@ def evaluate_api_call(
 def learn_skill(
     input_text: str,
     response_text: str,
+    tool_calls: list[dict[str, Any]] | None = None,
     domain: str = "response",
 ) -> dict[str, str]:
     """
@@ -251,20 +252,25 @@ def learn_skill(
 
     After the LLM produces a response, store it as a learnable skill.
     Next time a similar query arrives, the cerebellum can respond directly
-    without calling the LLM.
+    without calling the LLM — replaying the stored response or tool-call
+    sequence.
 
     Args:
         input_text: The query/input that triggered the response
         response_text: The response that was produced
+        tool_calls: Optional list of tool-call dicts for multi-step action
+            sequences (e.g., [{"tool": "click", "params": {"x": 100}}]).
+            When provided, the skill stores the full action sequence for replay.
         domain: Skill domain (default: "response")
 
     Returns:
         The skill_id for future reference.
     """
     cb = _get_cerebellum()
-    skill_id = cb.learn_skill(input_text, response_text, domain=domain)
+    skill_id = cb.learn_skill(input_text, response_text,
+                              tool_calls=tool_calls, domain=domain)
     cb.skill_store.save()
-    return {"status": "ok", "skill_id": skill_id}
+    return {"status": "ok", "skill_id": skill_id, "is_sequence": bool(tool_calls)}
 
 
 @mcp.tool()
@@ -286,7 +292,7 @@ def match_skill(query: str) -> dict[str, Any]:
     result = cb.match_skill(query)
     if result is None:
         return {"matched": False}
-    return _sanitize({
+    out = {
         "matched": True,
         "similarity": result.similarity,
         "match_confidence": result.match_confidence,
@@ -294,7 +300,11 @@ def match_skill(query: str) -> dict[str, Any]:
         "response_text": result.skill.response_text,
         "skill_id": result.skill.id,
         "domain": result.skill.domain,
-    })
+        "is_sequence": result.skill.is_sequence,
+    }
+    if result.skill.tool_calls:
+        out["tool_calls"] = result.skill.tool_calls
+    return _sanitize(out)
 
 
 @mcp.tool()
@@ -459,6 +469,19 @@ def monitor_before_step(
             "similarity": round(pred.failure_warning.similarity, 4),
             "severity": round(pred.failure_warning.severity, 4),
         }
+
+    if _cb is not None:
+        try:
+            query_emb = _cb.encoder.encode_text(action)
+            memories = _cb.memory.retrieve(query_emb, top_k=3, min_strength=0.2)
+            if memories:
+                result["relevant_memories"] = [
+                    {"content": m.content, "strength": round(m.strength, 3)}
+                    for m in memories
+                ]
+        except Exception:
+            pass
+
     return result
 
 
@@ -485,6 +508,26 @@ def monitor_after_step(
     """
     monitor = _get_monitor()
     verdict = monitor.after_step(outcome=outcome, success=success)
+
+    if _cb is not None:
+        try:
+            import uuid
+            from digital_cerebellum.core.types import MemorySlot
+            content = f"Step {verdict.step_number}: {outcome[:200]}"
+            if verdict.should_pause:
+                content += " [CASCADE DETECTED]"
+            emb = _cb.encoder.encode_text(outcome)
+            _cb.memory.store(MemorySlot(
+                id=uuid.uuid4().hex,
+                content=content,
+                embedding=emb,
+                strength=1.0 if verdict.should_pause else 0.6,
+                layer="short_term",
+                metadata={"spe": verdict.spe, "step": verdict.step_number},
+            ))
+        except Exception:
+            pass
+
     return _sanitize({
         "spe": round(verdict.spe, 4),
         "should_pause": verdict.should_pause,
@@ -555,6 +598,216 @@ def monitor_status() -> dict[str, Any]:
     """
     monitor = _get_monitor()
     return _sanitize(monitor.stats)
+
+
+# ======================================================================
+# Fluid Memory tools (hippocampal memory analogue)
+# ======================================================================
+
+@mcp.tool()
+def store_memory(
+    content: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Store an experience in the cerebellum's fluid memory.
+
+    Memories are stored with embeddings for semantic retrieval, decay over
+    time (short-term → long-term promotion), and are reconsolidated on
+    every recall — just like biological episodic memory.
+
+    Args:
+        content: Text description of the experience to remember
+            (e.g., "User prefers dark mode", "API call to /users failed with 403")
+        metadata: Optional metadata dict (e.g., {"domain": "preferences", "step": 5})
+
+    Returns:
+        Memory slot ID and layer (short_term initially).
+    """
+    import uuid
+    from digital_cerebellum.core.types import MemorySlot
+
+    cb = _get_cerebellum()
+    emb = cb.encoder.encode_text(content)
+    slot = MemorySlot(
+        id=uuid.uuid4().hex,
+        content=content,
+        embedding=emb,
+        strength=1.0,
+        layer="short_term",
+        metadata=metadata or {},
+    )
+    slot_id = cb.memory.store(slot)
+    return {"status": "ok", "memory_id": slot_id, "layer": "short_term"}
+
+
+@mcp.tool()
+def retrieve_memories(
+    query: str,
+    top_k: int = 5,
+) -> list[dict[str, Any]]:
+    """
+    Retrieve relevant memories by semantic similarity.
+
+    The cerebellum's fluid memory works like human episodic recall:
+    retrieved memories are reconsolidated (strengthened and slightly
+    reshaped toward the query), making frequently accessed memories
+    more durable — just like biological reconsolidation.
+
+    Args:
+        query: What to remember — natural language description
+        top_k: Maximum number of memories to return (default: 5)
+
+    Returns:
+        List of matching memories with content, strength, layer, and metadata.
+    """
+    cb = _get_cerebellum()
+    query_emb = cb.encoder.encode_text(query)
+    slots = cb.memory.retrieve(query_emb, top_k=top_k)
+    return [
+        {
+            "memory_id": s.id,
+            "content": s.content,
+            "strength": round(s.strength, 4),
+            "layer": s.layer,
+            "access_count": s.access_count,
+            "metadata": s.metadata,
+        }
+        for s in slots
+    ]
+
+
+# ======================================================================
+# Sleep Cycle (offline memory consolidation)
+# ======================================================================
+
+@mcp.tool()
+def run_sleep_cycle() -> dict[str, Any]:
+    """
+    Run one sleep cycle — offline memory consolidation.
+
+    Like biological sleep, this performs maintenance:
+    - Decays weak memories (forgetting curve)
+    - Promotes strong short-term memories to long-term
+    - Merges similar skills (deduplication)
+    - Prunes unreliable skills (extinction)
+
+    Call this periodically (e.g., between task sessions) or when the
+    agent is idle. Frequent sleep cycles keep memory lean and skills sharp.
+
+    Returns:
+        Consolidation report with counts of promoted, pruned, and merged items.
+    """
+    cb = _get_cerebellum()
+    report = cb.sleep()
+    cb.skill_store.save()
+    return _sanitize({
+        "status": "ok",
+        "memory_consolidated": {
+            "promoted": report.promoted,
+            "decayed": report.decayed,
+        },
+        "skill_consolidation": report.skill_consolidation,
+        "memory_stats": cb.memory.stats,
+        "skill_count": len(cb.skill_store),
+    })
+
+
+# ======================================================================
+# Gut Feeling (somatic marker — intuition)
+# ======================================================================
+
+@mcp.tool()
+def get_gut_feeling(
+    action: str,
+    domain: str = "",
+    context: str = "",
+) -> dict[str, Any]:
+    """
+    Ask the cerebellum for its gut feeling about an action.
+
+    Based on Damasio's Somatic Marker Hypothesis: past experiences leave
+    emotional traces (markers) that bias future decisions BEFORE conscious
+    reasoning. The cerebellum's prediction heads produce divergence patterns;
+    when a current pattern resembles a past bad outcome, the gut feeling
+    turns negative — even if surface-level confidence looks fine.
+
+    Use this to get a fast, pre-rational risk assessment:
+    - "positive" = past similar situations went well
+    - "uneasy" = mixed signals
+    - "alarm" = past similar situations went badly — reconsider!
+
+    Args:
+        action: The action being considered (e.g., "delete the production database")
+        domain: Optional domain for more specific gut feeling (e.g., "shell_command")
+        context: Optional additional context
+
+    Returns:
+        Gut feeling with valence (-1 to +1), intensity (0 to 1), label,
+        and whether the feeling is strong enough to override normal routing.
+    """
+    cb = _get_cerebellum()
+    input_data = {"action": action, "context": context} if context else {"action": action}
+    feature_vec = cb.encoder.encode_text(action)
+
+    result = cb.evaluate(domain or "tool_call", input_data, context=context)
+    gut = result.get("_gut_feeling", {})
+
+    if not gut:
+        return {
+            "valence": 0.0,
+            "intensity": 0.0,
+            "label": "neutral",
+            "should_override": False,
+            "message": "No somatic markers accumulated yet — need more experience.",
+        }
+
+    return _sanitize({
+        "valence": gut.get("valence", 0.0),
+        "intensity": gut.get("intensity", 0.0),
+        "label": gut.get("label", "neutral"),
+        "should_override": gut.get("should_override", False),
+        "trigger_pattern": gut.get("trigger_pattern", "none"),
+        "message": _gut_message(gut),
+    })
+
+
+def _gut_message(gut: dict) -> str:
+    label = gut.get("label", "neutral")
+    intensity = gut.get("intensity", 0)
+    if label == "alarm":
+        return f"Strong negative gut feeling (intensity={intensity:.2f}). Past similar actions led to bad outcomes. Reconsider."
+    if label == "uneasy":
+        return f"Mild unease (intensity={intensity:.2f}). Proceed with caution."
+    if label == "positive":
+        return f"Positive gut feeling (intensity={intensity:.2f}). Past similar actions went well."
+    return "No strong feeling either way."
+
+
+# ======================================================================
+# Exploration Suggestions (curiosity-driven)
+# ======================================================================
+
+@mcp.tool()
+def get_exploration_suggestions() -> list[dict[str, Any]]:
+    """
+    Get actionable exploration suggestions from the curiosity drive.
+
+    The cerebellum tracks where it's learning fastest and recommends
+    concrete actions: "explore domain X" (actively learning),
+    "investigate domain Y" (high error, needs data), or
+    "abandon domain Z" (noise, not learnable).
+
+    Like biological curiosity: dopaminergic signals don't just report
+    novelty — they DRIVE exploratory behavior toward learnable frontiers.
+
+    Returns:
+        List of exploration suggestions with domain, action, urgency, and reason.
+        Empty list if not enough data has been accumulated yet.
+    """
+    cb = _get_cerebellum()
+    requests = cb.curiosity_drive.get_exploration_requests()
+    return _sanitize(requests)
 
 
 # ======================================================================
