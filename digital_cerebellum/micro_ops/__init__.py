@@ -29,11 +29,17 @@ from digital_cerebellum.micro_ops.aim_trainer import (
 from digital_cerebellum.micro_ops.gui_controller import (
     GUIController,
     GUIControlConfig,
+    CorrectionMicrozone,
     TrialResult,
 )
 from digital_cerebellum.micro_ops.openclaw_env import (
     OpenClawEnvironment,
     OpenClawEnvConfig,
+)
+from digital_cerebellum.micro_ops.tank_env import (
+    TankBattleEnv,
+    TankConfig,
+    TankController,
 )
 
 __all__ = [
@@ -52,7 +58,11 @@ __all__ = [
     "AimTrainerConfig",
     "GUIController",
     "GUIControlConfig",
+    "CorrectionMicrozone",
     "TrialResult",
     "OpenClawEnvironment",
     "OpenClawEnvConfig",
+    "TankBattleEnv",
+    "TankConfig",
+    "TankController",
 ]

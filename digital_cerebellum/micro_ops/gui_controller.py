@@ -19,14 +19,25 @@ Biological model (Wolpert, Miall & Kawato 1998; Bastian 2006):
   The correction IS derived from the forward model gradient.
   The cortex defines WHAT to do; the cerebellum learns HOW precisely.
 
-Architecture:
-  cortex_signal(state) → crude action          # "move right-ish"
-  correction_net(state) → learned correction   # "adjust -3px, +1px"
-  action = cortex + correction
+Architecture (multi-microzone):
+  cortex_signal(state) → crude action               # "move right-ish"
+  microzone_k.net(state) → correction_k for each k  # parallel learned corrections
+  action = cortex + Σ correction_k
   → forward model predicts next state
   → actual next state observed
-  → SPE gradient flows THROUGH frozen FM BACK to correction_net
-  → correction_net learns to reduce SPE
+  → per-microzone climbing fiber error drives each correction_k independently
+  → each microzone learns to minimize its own sub-objective
+
+  Biological basis for microzones:
+    The cerebellar cortex is divided into parasagittal microzones, each receiving
+    a distinct climbing fiber signal from the inferior olive.  Each microzone
+    controls a different motor component (e.g., one for saccade accuracy, another
+    for head stabilization).  They share the same mossy fiber input (state) but
+    learn independently.  Their outputs are summed at the deep cerebellar nuclei.
+
+    Single-objective tasks (aim trainer, GUI click) use one microzone.
+    Multi-objective tasks (tank: aim + dodge + move) use parallel microzones,
+    each with its own error signal — exactly as in biology.
 """
 
 from __future__ import annotations
@@ -69,13 +80,57 @@ class TrialResult:
     latency_ms: float
 
 
+class CorrectionMicrozone:
+    """
+    A single cerebellar microzone — independent correction circuit.
+
+    Each microzone has its own population of Purkinje cells (correction net),
+    its own climbing fiber input (error signal), and learns independently.
+    Multiple microzones operate in parallel on the same mossy fiber input
+    (state) and their outputs are summed at the deep cerebellar nuclei.
+    """
+    __slots__ = ('name', 'net', 'optimizer', 'scale')
+
+    def __init__(
+        self,
+        name: str,
+        state_dim: int,
+        action_dim: int,
+        hidden_dim: int = 64,
+        lr: float = 0.01,
+        scale: float = 0.5,
+    ):
+        self.name = name
+        self.scale = scale
+        self.net = torch.nn.Sequential(
+            torch.nn.Linear(state_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim, hidden_dim),
+            torch.nn.ReLU(),
+            torch.nn.Linear(hidden_dim, action_dim),
+        )
+        with torch.no_grad():
+            self.net[-1].weight.mul_(0.01)
+            self.net[-1].bias.zero_()
+        self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
+
+
 class GUIController:
     """
     Cerebellar controller — SPE-driven, task-agnostic.
 
     The SAME learning mechanism works for any environment:
     aim trainer, tank battle, robotic arm, GUI control.
-    Only cortex_signal() needs task-specific override.
+
+    Subclasses override ONLY:
+      - cortex_signal(state)        — what the cortex wants (mossy fiber)
+      - cortex_error_signal(s_t)    — single climbing fiber (simple tasks)
+      - cortex_error_signals(s_t)   — per-microzone climbing fibers (multi-obj)
+      - _build_microzones()         — define parallel correction circuits
+
+    Everything else — forward model, microzone training, SPE tracking,
+    confidence, adaptive cortex consultation — is the universal
+    cerebellar circuit, identical across all tasks.
     """
 
     def __init__(
@@ -83,10 +138,12 @@ class GUIController:
         state_dim: int,
         action_dim: int,
         cfg: GUIControlConfig | None = None,
+        cerebellum_enabled: bool = True,
     ):
         self.cfg = cfg or GUIControlConfig()
         self.state_dim = state_dim
         self.action_dim = action_dim
+        self.cerebellum_enabled = cerebellum_enabled
 
         self.forward_model = ForwardModel(
             state_dim=state_dim,
@@ -95,25 +152,30 @@ class GUIController:
             lr=self.cfg.forward_model_lr,
         )
 
-        self._correction_net = torch.nn.Sequential(
-            torch.nn.Linear(state_dim, self.cfg.correction_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.cfg.correction_hidden, self.cfg.correction_hidden),
-            torch.nn.ReLU(),
-            torch.nn.Linear(self.cfg.correction_hidden, action_dim),
-        )
-        with torch.no_grad():
-            self._correction_net[-1].weight.mul_(0.01)
-            self._correction_net[-1].bias.zero_()
-        self._correction_opt = torch.optim.Adam(
-            self._correction_net.parameters(), lr=self.cfg.correction_lr,
-        )
+        self._microzones = self._build_microzones()
 
         self._step = 0
         self._noise_scale = self.cfg.cortex_noise
         self._prev_state: np.ndarray | None = None
         self._prev_action: np.ndarray | None = None
         self._history: list[dict] = []
+        self._recent_spes: list[float] = []
+
+    def _build_microzones(self) -> list[CorrectionMicrozone]:
+        """Factory for correction microzones.
+
+        Default: single microzone driven by cortex_error_signal().
+        Override in subclasses to create parallel microzones for
+        multi-objective tasks (e.g., aim + dodge + move).
+        """
+        return [CorrectionMicrozone(
+            "default",
+            self.state_dim,
+            self.action_dim,
+            hidden_dim=self.cfg.correction_hidden,
+            lr=self.cfg.correction_lr,
+            scale=self.cfg.correction_scale,
+        )]
 
     def cortex_signal(self, state: np.ndarray) -> np.ndarray:
         """
@@ -139,11 +201,15 @@ class GUIController:
         return np.clip(action, -1.0, 1.0)
 
     def cerebellar_correction(self, state: np.ndarray) -> np.ndarray:
-        """Generate learned correction from the cerebellar network."""
+        """Sum corrections from all microzones (deep cerebellar nuclei)."""
+        if not self.cerebellum_enabled:
+            return np.zeros(self.action_dim, dtype=np.float32)
         with torch.no_grad():
             s = torch.from_numpy(state).float().unsqueeze(0)
-            correction = self._correction_net(s).squeeze(0).numpy()
-        return correction * self.cfg.correction_scale
+            total = torch.zeros(1, self.action_dim)
+            for mz in self._microzones:
+                total += mz.net(s) * mz.scale
+            return total.squeeze(0).numpy()
 
     def step(self, env: Environment) -> TrialResult:
         """
@@ -234,6 +300,17 @@ class GUIController:
             return state_t[..., 4:6] * self.cfg.cortex_gain
         return state_t[..., :min(self.action_dim, state_t.shape[-1])] * 0.1
 
+    def cortex_error_signals(
+        self, state_t: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        """Per-microzone climbing fiber errors.
+
+        Default wraps cortex_error_signal() for the single "default" microzone.
+        Override in subclasses that define multiple microzones to return
+        a dict mapping microzone name → differentiable error tensor.
+        """
+        return {"default": self.cortex_error_signal(state_t)}
+
     def _learn_correction(
         self,
         state: np.ndarray,
@@ -242,56 +319,62 @@ class GUIController:
         spe_scalar: float,
     ):
         """
-        Train correction via FUTURE ERROR MINIMIZATION through the FM.
+        Train each microzone independently via its own climbing fiber error.
 
-        Biological model (retinal slip / motor error):
-          1. Cortex says "aim at target" (crude command)
-          2. Cerebellum adds correction, action is executed
-          3. Forward model predicts the NEXT state
-          4. At the predicted next state, we compute the RESIDUAL ERROR
-             (how far from target we'll still be)
-          5. Correction learns to MINIMIZE this future error
+        For each microzone k:
+          1. Freeze all OTHER microzones and the forward model
+          2. Compute action = tanh(cortex + mz_k(state) + Σ_{j≠k} detach(mz_j(state)))
+          3. Predict next state through the frozen FM
+          4. Compute microzone k's error from the predicted next state
+          5. Backprop only through mz_k's correction net
 
-          This is exactly "retinal slip" in eye movements:
-            - Move eyes toward target
-            - After saccade, retinal slip = target offset on retina
-            - Cerebellum adjusts so next saccade lands closer
-
-        Why this enables precise aiming:
-          - future_error includes turret angle offset, distance to target
-          - Gradient flows: correction_net → FM → predicted_next → error
-          - The gradient tells correction: "if you increased turret action
-            by 0.1, the predicted turret error would decrease by 0.05"
-          - Over time, correction learns the exact mapping
-
-        Not reward-based: the error signal is the SENSORY state itself
-        (observable, not externally defined). SPE modulates learning rate.
+        This mirrors the biological independence of microzones: each has its own
+        Purkinje cell population and climbing fiber, learning in parallel without
+        interfering with other microzones' synaptic weights.
         """
+        self._recent_spes.append(spe_scalar)
+        if len(self._recent_spes) > 100:
+            self._recent_spes.pop(0)
+
+        if not self.cerebellum_enabled:
+            return
+
         s_t = torch.from_numpy(state).float().unsqueeze(0)
         c_t = torch.from_numpy(cortex).float().unsqueeze(0)
 
         for p in self.forward_model.parameters():
             p.requires_grad_(False)
 
-        correction = self._correction_net(s_t)
-        action = torch.tanh(c_t + correction * self.cfg.correction_scale)
-
-        sa = torch.cat([s_t, action], dim=-1)
-        delta = self.forward_model.net(sa)
-        predicted_next = s_t + delta if self.forward_model._residual_mode else delta
-
-        future_error = self.cortex_error_signal(predicted_next)
-        error_loss = future_error.pow(2).sum()
-
-        reg = correction.pow(2).mean() * 0.005
-
         modulation = 1.0 + min(spe_scalar, 3.0)
-        loss = (error_loss + reg) * modulation
 
-        self._correction_opt.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(self._correction_net.parameters(), 1.0)
-        self._correction_opt.step()
+        for mz in self._microzones:
+            correction = mz.net(s_t) * mz.scale
+
+            other_corr = sum(
+                (omz.net(s_t) * omz.scale).detach()
+                for omz in self._microzones if omz is not mz
+            )
+            if not isinstance(other_corr, torch.Tensor):
+                other_corr = torch.zeros_like(correction)
+
+            action = torch.tanh(c_t + correction + other_corr)
+            sa = torch.cat([s_t, action], dim=-1)
+            delta = self.forward_model.net(sa)
+            predicted_next = s_t + delta if self.forward_model._residual_mode else delta
+
+            errors = self.cortex_error_signals(predicted_next)
+            if mz.name not in errors:
+                continue
+
+            future_error = errors[mz.name]
+            error_loss = future_error.pow(2).sum()
+            reg = correction.pow(2).mean() * 0.005
+            loss = (error_loss + reg) * modulation
+
+            mz.optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(mz.net.parameters(), 1.0)
+            mz.optimizer.step()
 
         for p in self.forward_model.parameters():
             p.requires_grad_(True)
@@ -336,10 +419,60 @@ class GUIController:
             "noise_scale": round(self._noise_scale, 4),
         }
 
+    # ── General cerebellar metrics (task-agnostic) ──────────────────
+
+    @property
+    def mean_recent_spe(self) -> float:
+        """Average SPE over the last 100 steps."""
+        if not self._recent_spes:
+            return float("inf")
+        return sum(self._recent_spes) / len(self._recent_spes)
+
+    @property
+    def cerebellum_confidence(self) -> float:
+        """0-1 score: how well the cerebellum has learned the current task."""
+        spe = self.mean_recent_spe
+        fm_err = self.forward_model.mean_recent_error
+        spe_conf = 1.0 / (1.0 + spe * 2.0)
+        fm_conf = 1.0 / (1.0 + fm_err * 10.0)
+        return min(spe_conf, fm_conf)
+
+    def should_call_cortex(self, base_interval: int = 90) -> int:
+        """Adaptive cortex consultation interval based on confidence.
+
+        High confidence → longer interval → less cortex (LLM) dependency.
+        This is the digital equivalent of motor skill automation:
+        well-learned tasks need less conscious (cortex) involvement.
+        """
+        conf = self.cerebellum_confidence
+        multiplier = 1.0 + conf * 4.0
+        return int(base_interval * multiplier)
+
+    @property
+    def microzone_names(self) -> list[str]:
+        return [mz.name for mz in self._microzones]
+
+    def microzone_corrections(self, state: np.ndarray) -> dict[str, np.ndarray]:
+        """Per-microzone correction vectors (for diagnostics)."""
+        if not self.cerebellum_enabled:
+            return {mz.name: np.zeros(self.action_dim, dtype=np.float32)
+                    for mz in self._microzones}
+        with torch.no_grad():
+            s = torch.from_numpy(state).float().unsqueeze(0)
+            return {
+                mz.name: (mz.net(s).squeeze(0) * mz.scale).numpy()
+                for mz in self._microzones
+            }
+
     @property
     def stats(self) -> dict:
         return {
             "step": self._step,
             "noise_scale": round(self._noise_scale, 4),
+            "cerebellum_enabled": self.cerebellum_enabled,
+            "cerebellum_confidence": round(self.cerebellum_confidence, 4),
+            "mean_recent_spe": round(self.mean_recent_spe, 6)
+                if self._recent_spes else None,
+            "microzones": self.microzone_names,
             "forward_model": self.forward_model.stats,
         }

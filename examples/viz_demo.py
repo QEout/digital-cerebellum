@@ -223,7 +223,8 @@ def run_tank_battle():
     event_bus.emit("mode_switch", "System", mode="tank")
 
     round_num = 0
-    strategy_interval = 90
+    base_strategy_interval = 90
+    next_llm_tick = 0
 
     while not mode_switch_event.is_set():
         if _check_reset():
@@ -233,11 +234,13 @@ def run_tank_battle():
                 cfg=tank_gui_cfg,
             )
             round_num = 0
+            next_llm_tick = 0
             event_bus.emit("reset", "System", message="cerebellum_reset")
             print("  [RESET] Tank: Memory cleared.")
 
         round_num += 1
         env.reset()
+        next_llm_tick = 0
         event_bus.emit("episode_start", "TankBattle", episode=round_num)
 
         tick = 0
@@ -247,7 +250,7 @@ def run_tank_battle():
             if _check_reset():
                 break
 
-            if tick % strategy_interval == 0:
+            if tick >= next_llm_tick:
                 strat = _call_llm_strategy(env)
                 if strat:
                     env.set_strategy(
@@ -255,56 +258,78 @@ def run_tank_battle():
                         strat.get("strategy", "neutral"),
                         strat.get("move_toward", [400, 300]),
                     )
+                next_llm_tick = tick + ctrl.should_call_cortex(base_strategy_interval)
 
             result = ctrl.step(env)
 
             game = env.get_game_state()
             event_bus.emit("tank_state", "TankBattle", **game)
 
+            spe = result.spe
+            fm_stats = ctrl.forward_model.stats
+            corr_mag = float(np.linalg.norm(result.correction))
+            confidence = ctrl.cerebellum_confidence
+
             if tick % 3 == 0:
                 event_bus.emit("encode", "FeatureEncoder", step=tick)
                 event_bus.emit("separate", "PatternSeparator", step=tick,
-                               sparsity=0.85 + np.random.random() * 0.1)
+                               sparsity=min(1.0, 0.7 + confidence * 0.3))
             if tick % 5 == 0:
                 event_bus.emit("predict", "PredictionEngine", step=tick,
-                               confidence=0.5 + np.random.random() * 0.4)
+                               confidence=confidence)
+                is_fast = confidence > 0.5
                 event_bus.emit("route", "DecisionRouter", step=tick,
-                               decision="fast" if np.random.random() > 0.3 else "slow")
+                               decision="fast" if is_fast else "slow")
             if tick % 20 == 0:
+                threats = env.get_threat_assessment()
+                max_threat = max(
+                    (t for t in threats.values() if t["alive"]),
+                    key=lambda t: t["threat_score"], default=None,
+                )
+                if max_threat:
+                    valence = -max_threat["threat_score"] / 50.0
+                    intensity = min(1.0, max_threat["threat_score"] / 30.0)
+                else:
+                    valence, intensity = 0.5, 0.1
                 event_bus.emit("gut_feeling", "SomaticMarker",
-                               valence=np.random.random() * 2 - 1,
-                               intensity=np.random.random())
+                               valence=valence, intensity=intensity)
             if tick % 30 == 0:
+                is_improving = fm_stats.get("is_improving", False)
                 event_bus.emit("curiosity", "CuriosityDrive",
-                               novelty=np.random.random(),
-                               recommendation="explore" if np.random.random() > 0.5 else "exploit")
+                               novelty=ctrl.mean_recent_spe,
+                               recommendation="explore" if not is_improving else "exploit")
             if tick % 10 == 0:
-                spe = result.spe if hasattr(result, 'spe') else 0
                 event_bus.emit("step", "StepMonitor", step=tick,
                                phase="after", spe=spe,
                                risk="low" if spe < 0.5 else "high")
                 if spe > 0.5:
                     event_bus.emit("error", "ErrorComparator", spe=spe, step=tick)
             if tick % 15 == 0:
-                event_bus.emit("memory_store", "FluidMemory", step=tick)
+                event_bus.emit("memory_store", "FluidMemory", step=tick,
+                               fm_error=fm_stats.get("mean_recent_error", 0))
             if tick % 25 == 0:
                 event_bus.emit("skill_match", "SkillStore", step=tick,
-                               similarity=0.7 + np.random.random() * 0.3)
+                               similarity=confidence,
+                               correction_mag=corr_mag)
 
             tick += 1
             time.sleep(0.016)
 
         ctrl.decay_noise()
         score = env.get_round_score()
-        event_bus.emit("round_end", "TankBattle", round=round_num, **score)
+        adaptive_interval = ctrl.should_call_cortex(base_strategy_interval)
+        event_bus.emit("round_end", "TankBattle", round=round_num,
+                       cerebellum_confidence=round(confidence, 4),
+                       adaptive_llm_interval=adaptive_interval,
+                       mean_spe=round(ctrl.mean_recent_spe, 4),
+                       **score)
         print(f"  Tank round {round_num:3d}: kills={score['kills']}  "
               f"hit_rate={score['hit_rate']*100:.0f}%  "
               f"score={score['total_score']:.0f}  "
               f"grade={score['grade']}  "
-              f"llm_calls={score['llm_calls']}")
-
-        if round_num > 5:
-            strategy_interval = min(300, strategy_interval + 20)
+              f"llm_calls={score['llm_calls']}  "
+              f"cb_conf={confidence:.2f}  "
+              f"llm_interval={adaptive_interval}")
 
 
 # ══════════════════════════════════════════════════════════════════════

@@ -1,5 +1,5 @@
 """
-TankBattleEnv — 2D tank battle for demonstrating cortex-cerebellum collaboration.
+TankBattleEnv — 2D tank battle for validating cortex-cerebellum collaboration.
 
 The LLM (cortex) makes strategic decisions every few seconds:
   - Which enemy to target
@@ -33,7 +33,11 @@ from typing import Any
 import numpy as np
 import torch
 
-from digital_cerebellum.micro_ops.gui_controller import GUIController, GUIControlConfig
+from digital_cerebellum.micro_ops.gui_controller import (
+    GUIController,
+    GUIControlConfig,
+    CorrectionMicrozone,
+)
 
 
 @dataclass
@@ -73,21 +77,25 @@ ENEMY_TYPES = {
 
 DEFAULT_ENEMY_ROSTER = ["heavy", "sniper", "guerrilla"]
 
+_MIN_SPAWN_DIST_FROM_PLAYER = 120.0
+_MIN_SPAWN_DIST_BETWEEN_ENEMIES = 60.0
+
 
 @dataclass
 class TankConfig:
     arena_w: float = 600.0
     arena_h: float = 450.0
     player_speed: float = 2.5
-    player_hp: float = 100.0
-    bullet_speed: float = 12.0
-    bullet_damage: float = 20.0
-    shoot_cooldown: int = 10
+    player_hp: float = 60.0
+    bullet_speed: float = 8.0
+    bullet_damage: float = 15.0
+    shoot_cooldown: int = 15
     enemy_count: int = 3
     enemy_roster: list[str] = field(default_factory=lambda: list(DEFAULT_ENEMY_ROSTER))
     round_max_ticks: int = 1800
     turret_speed: float = 0.15
     noise: float = 0.1
+    randomize_spawns: bool = True
 
 
 @dataclass
@@ -198,23 +206,30 @@ class TankBattleEnv:
         self._hits_on = {}
         self._deaths_by = {}
 
+        px = c.arena_w * (0.3 + np.random.random() * 0.4) if c.randomize_spawns else c.arena_w / 2
+        py = c.arena_h * (0.3 + np.random.random() * 0.4) if c.randomize_spawns else c.arena_h / 2
         self._player = _Tank(
-            x=c.arena_w / 2, y=c.arena_h / 2,
+            x=px, y=py,
             hp=c.player_hp, angle=0.0, turret_angle=0.0,
             alive=True, label="player",
         )
 
         self._enemies = []
-        positions = [
+        fixed_positions = [
             (c.arena_w * 0.15, c.arena_h * 0.15),
             (c.arena_w * 0.85, c.arena_h * 0.15),
             (c.arena_w * 0.5, c.arena_h * 0.85),
         ]
+        placed: list[tuple[float, float]] = []
         for i in range(c.enemy_count):
-            ex, ey = positions[i % len(positions)]
             type_key = c.enemy_roster[i % len(c.enemy_roster)]
             et = ENEMY_TYPES.get(type_key, EnemyType())
             label = chr(65 + i)
+            if c.randomize_spawns:
+                ex, ey = self._random_enemy_spawn(px, py, placed, c)
+            else:
+                ex, ey = fixed_positions[i % len(fixed_positions)]
+            placed.append((ex, ey))
             self._enemies.append(_Tank(
                 x=ex, y=ey, hp=et.hp,
                 angle=np.random.uniform(0, math.tau),
@@ -339,7 +354,13 @@ class TankBattleEnv:
         return reward
 
     def set_strategy(self, target_idx: int, strategy: str, move_toward: list[float]):
-        self._strategy_target = max(0, min(target_idx, len(self._enemies) - 1))
+        target_idx = max(0, min(target_idx, len(self._enemies) - 1))
+        if not self._enemies[target_idx].alive:
+            for i, e in enumerate(self._enemies):
+                if e.alive:
+                    target_idx = i
+                    break
+        self._strategy_target = target_idx
         strat_map = {"aggressive": 0.8, "defensive": 0.2, "neutral": 0.5, "retreat": 0.0}
         self._strategy_code = strat_map.get(strategy, 0.5)
         self._move_toward = np.array(move_toward[:2], dtype=np.float32)
@@ -404,11 +425,14 @@ class TankBattleEnv:
             t = threats.get(e.label, {})
             if e.alive:
                 lines.append(
-                    f"敌人{e.label}[{t.get('type','?')}]在({e.x:.0f},{e.y:.0f})"
+                    f"敌人{e.label}(索引{i})[{t.get('type','?')}]"
+                    f"在({e.x:.0f},{e.y:.0f})"
                     f"血量{e.hp:.0f}，小脑威胁评估:{t.get('threat_level','?')}"
                     f"(场均伤害{t.get('avg_dmg_per_round',0):.0f}，"
                     f"致死率{t.get('death_rate',0):.0%})。"
                 )
+            else:
+                lines.append(f"敌人{e.label}(索引{i})已被击毁。")
 
         incoming = sum(1 for b in self._bullets if b.alive and b.owner != "player")
         if incoming > 0:
@@ -416,7 +440,7 @@ class TankBattleEnv:
 
         max_threat = max(threats.values(), key=lambda t: t["threat_score"] if t["alive"] else -1, default=None)
         if max_threat and max_threat["alive"] and max_threat["threat_score"] > 15:
-            lines.append(f"⚠ 小脑直觉警告：{max_threat['type']}型敌人威胁极高，"
+            lines.append(f"小脑直觉警告：{max_threat['type']}型敌人威胁极高，"
                          f"场均造成{max_threat['avg_dmg_per_round']:.0f}伤害，"
                          f"建议优先处理！")
 
@@ -512,6 +536,27 @@ class TankBattleEnv:
             if e.alive:
                 return e
         return None
+
+    @staticmethod
+    def _random_enemy_spawn(
+        player_x: float, player_y: float,
+        placed: list[tuple[float, float]],
+        cfg: TankConfig,
+    ) -> tuple[float, float]:
+        """Pick a random spawn position far enough from player and others."""
+        margin = 30.0
+        for _ in range(200):
+            ex = np.random.uniform(margin, cfg.arena_w - margin)
+            ey = np.random.uniform(margin, cfg.arena_h - margin)
+            if math.hypot(ex - player_x, ey - player_y) < _MIN_SPAWN_DIST_FROM_PLAYER:
+                continue
+            if any(
+                math.hypot(ex - px, ey - py) < _MIN_SPAWN_DIST_BETWEEN_ENEMIES
+                for px, py in placed
+            ):
+                continue
+            return ex, ey
+        return cfg.arena_w * 0.8, cfg.arena_h * 0.2
 
     def _fire_bullet(self, tank: _Tank, owner: str, speed: float, damage: float):
         a = tank.turret_angle
@@ -649,27 +694,59 @@ class TankBattleEnv:
 
 class TankController(GUIController):
     """
-    Cerebellar controller for the tank battle.
+    Tank-specific cortex signals + multi-microzone cerebellar controller.
 
-    Overrides:
-      - cortex_signal(): crude motor intention for tank combat
-      - cortex_error_signal(): the "retinal slip" for aiming
+    Three parallel microzones mirror biological specialization:
+      aim   — turret angle error  (climbing fiber: retinal slip)
+      dodge — bullet proximity    (climbing fiber: nociceptive/threat)
+      move  — target approach     (climbing fiber: proprioceptive drift)
 
-    The learning mechanism (_learn_correction) is INHERITED unchanged.
+    Each microzone has its own correction net and learns independently.
+    Their outputs are summed at the "deep cerebellar nuclei" (action vector).
+
+    Task-specific overrides:
+      - _build_microzones()       — 3 parallel correction circuits
+      - cortex_error_signals()    — per-microzone climbing fibers
+      - cortex_signal()           — crude motor intention for tank combat
     """
 
-    def cortex_error_signal(self, state_t: torch.Tensor) -> torch.Tensor:
-        """
-        Tank "retinal slip" — differentiable aim + distance error.
+    def _build_microzones(self) -> list[CorrectionMicrozone]:
+        cfg = self.cfg
+        return [
+            CorrectionMicrozone(
+                "aim", self.state_dim, self.action_dim,
+                hidden_dim=cfg.correction_hidden,
+                lr=cfg.correction_lr,
+                scale=cfg.correction_scale * 0.8,
+            ),
+            CorrectionMicrozone(
+                "dodge", self.state_dim, self.action_dim,
+                hidden_dim=cfg.correction_hidden,
+                lr=cfg.correction_lr * 2.0,
+                scale=cfg.correction_scale * 1.2,
+            ),
+            CorrectionMicrozone(
+                "move", self.state_dim, self.action_dim,
+                hidden_dim=cfg.correction_hidden,
+                lr=cfg.correction_lr,
+                scale=cfg.correction_scale * 0.5,
+            ),
+        ]
 
-        Key insight: turret aiming error = cross product of turret direction
-        and target direction.  sin(angle_error) is differentiable everywhere,
-        unlike atan2.
+    def cortex_error_signals(
+        self, state_t: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        return {
+            "aim": self._aim_error(state_t),
+            "dodge": self._dodge_error(state_t),
+            "move": self._move_error(state_t),
+        }
 
-        Error components:
-          - aim_sin: sin(turret_error) — 0 when perfectly aimed (weight 3×)
-          - aim_cos_gap: 1 - cos(turret_error) — 0 when aimed (weight 2×)
-          - dist: target distance — 0 when on top of target
+    @staticmethod
+    def _aim_error(state_t: torch.Tensor) -> torch.Tensor:
+        """Turret aiming error — the "retinal slip" for gaze control.
+
+        sin(angle_error) via cross product is differentiable everywhere.
         """
         turret_frac = state_t[..., 3:4]
         turret_angle = turret_frac * (2 * math.pi)
@@ -685,11 +762,40 @@ class TankController(GUIController):
         aim_sin = turret_cx * target_ny - turret_cy * target_nx
         aim_cos_gap = 1.0 - (turret_cx * target_nx + turret_cy * target_ny)
 
+        return torch.cat([aim_sin * 3.0, aim_cos_gap * 2.0], dim=-1)
+
+    @staticmethod
+    def _dodge_error(state_t: torch.Tensor) -> torch.Tensor:
+        """Bullet proximity error — the nociceptive climbing fiber.
+
+        High error when nearest bullet is close → correction learns to
+        add evasive movement.  Error ~0 when no threat → no interference.
+        """
+        bullet_dx = state_t[..., 8:9]
+        bullet_dy = state_t[..., 9:10]
+        bullet_dist = state_t[..., 10:11]
+
+        proximity = 1.0 / (bullet_dist + 0.15)
+
         return torch.cat([
-            aim_sin * 3.0,
-            aim_cos_gap * 2.0,
-            target_dx * 1.5,
-            target_dy * 1.5,
+            bullet_dx * proximity * 2.0,
+            bullet_dy * proximity * 2.0,
+        ], dim=-1)
+
+    @staticmethod
+    def _move_error(state_t: torch.Tensor) -> torch.Tensor:
+        """Target approach error — proprioceptive drift from waypoint.
+
+        Modulated by strategy_code: aggressive → want to close distance;
+        defensive → smaller drive to approach.
+        """
+        target_dx = state_t[..., 5:6]
+        target_dy = state_t[..., 6:7]
+        strategy = state_t[..., 14:15].clamp(0.1, 1.0)
+
+        return torch.cat([
+            target_dx * strategy * 1.5,
+            target_dy * strategy * 1.5,
         ], dim=-1)
 
     def cortex_signal(self, state: np.ndarray) -> np.ndarray:
