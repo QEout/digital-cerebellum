@@ -690,11 +690,14 @@ Phase 8a — ClawHub 发布 ✅（2026-03-05 完成）
   交付物：skill.yaml + SKILL.md + run.sh + clawhub_demo.py
   目标：100 个外部用户，收集反馈
 
-Phase 8b — 连续 GUI 控制 Demo（目标：投资人 / 论文）
-  ScreenStateEncoder：截屏/OCR → 状态向量（对接 MicroOpEngine）
-  GUIActionSpace：连续鼠标/键盘动作空间
-  Demo：OpenClaw 在 Figma/aim trainer 中学会操作，第 10 次比第 1 次快 100x
-  可选：ScreenDrag benchmark 对比 ShowUI-π
+Phase 8b — 连续 GUI 控制 Demo ✅（2026-03-05 完成）
+  ScreenStateEncoder：截屏 → 状态向量（ROI/downsample/hybrid 三策略）
+  GUIActionSpace：连续向量 ↔ 鼠标/键盘指令（编解码）
+  AimTrainerEnv：模拟瞄准训练器（Environment Protocol）
+  GUIController：皮层粗信号 + 小脑攀缘纤维误差修正
+  Demo：命中/集 11→24（2.2x），同时目标缩小 35→18px
+  1094 Hz, 0.9ms/action, 零 LLM 调用
+  交付物：4 个新组件 + gui_control_demo.py + 21 测试全绿
 
 Phase 8c — 标准 Benchmark 验证（目标：学术认可）
   在 TheAgentCompany / WebArena / OSWorld 上评测

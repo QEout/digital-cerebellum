@@ -408,12 +408,17 @@ class DigitalCerebellum:
         t0 = time.time()
         self._step += 1
 
+        from digital_cerebellum.viz.event_bus import event_bus as _eb
+
         # ① Encode — microzone formats, shared encoder embeds
         text = mz.format_input(payload, context)
         feature_vec = self.encoder.encode_tool_call_raw(text)
+        _eb.emit("encode", "FeatureEncoder", step=self._step)
 
         # ② Pattern separate
         z = self.separator.encode_event(feature_vec)
+        _eb.emit("separate", "PatternSeparator", step=self._step,
+                 sparsity=float((z == 0).mean()))
 
         # Phase 2: Adaptive gating — detect temporal structure first
         t_strength = 0.0
@@ -450,12 +455,20 @@ class DigitalCerebellum:
         else:
             prediction = self.engine.predict_numpy(z)
 
+        _eb.emit("predict", "PredictionEngine", step=self._step,
+                 confidence=float(prediction.confidence))
+
         # Phase 3: Somatic marker — gut feeling from head divergence pattern
         gut_feeling = None
         if self._somatic_marker is not None:
             gut_feeling = self._somatic_marker.feel(
                 prediction.head_predictions, domain=microzone_name,
             )
+            if gut_feeling is not None:
+                _eb.emit("gut_feeling", "SomaticMarker",
+                         valence=float(gut_feeling.valence),
+                         intensity=float(gut_feeling.intensity),
+                         label=gut_feeling.label)
 
         # Phase 3: Self-model adaptive thresholds (gradual blend)
         # Don't override until enough observations, then slowly blend
@@ -474,6 +487,8 @@ class DigitalCerebellum:
 
         # ④ Route (gut feeling can override, modulated by self-model)
         routing = self.router.route(prediction)
+        _eb.emit("route", "DecisionRouter", decision=routing.decision.value,
+                 confidence=float(routing.confidence))
 
         if gut_feeling is not None and gut_feeling.should_override:
             # Coordination: if self-model says we're competent, suppress override
@@ -536,6 +551,9 @@ class DigitalCerebellum:
                 "intrinsic_reward": curiosity.intrinsic_reward,
                 "recommendation": curiosity.recommendation,
             }
+            _eb.emit("curiosity", "CuriosityDrive",
+                     novelty=curiosity.novelty,
+                     recommendation=curiosity.recommendation)
 
         # Phase 2: State estimator tracking
         if self._state_estimator is not None:

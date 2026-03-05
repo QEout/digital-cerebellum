@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>数字小脑 — 实时神经活动可视化</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#020818;color:#e0e0e0;font-family:'PingFang SC','Microsoft YaHei',sans-serif;overflow:hidden}
+#canvas-container{position:absolute;top:0;left:0;width:68%;height:100%}
+canvas{display:block}
+
+#panel{position:absolute;top:0;right:0;width:32%;height:100%;background:rgba(2,8,24,0.95);
+  border-left:1px solid rgba(80,160,255,0.12);display:flex;flex-direction:column;overflow:hidden;z-index:10}
+#panel-header{padding:14px 16px 10px;border-bottom:1px solid rgba(80,160,255,0.1);
+  background:linear-gradient(180deg,rgba(10,30,60,0.5) 0%,transparent 100%)}
+#panel-header h1{font-size:14px;color:#5ae;letter-spacing:3px;font-weight:700}
+#panel-header .sub{font-size:9px;color:#345;margin-top:2px}
+
+/* Mode tabs */
+#mode-tabs{display:flex;border-bottom:1px solid rgba(80,160,255,0.15);flex-shrink:0;gap:2px;padding:4px 8px}
+.tab{flex:1;padding:10px 0;text-align:center;font-size:12px;cursor:pointer;
+  color:#8ac;border:1px solid rgba(80,160,255,0.2);border-radius:4px;
+  background:rgba(10,30,60,0.5);transition:all 0.2s;letter-spacing:2px;font-weight:600}
+.tab:hover{color:#fff;background:rgba(30,70,140,0.5);border-color:rgba(80,160,255,0.5)}
+.tab.active{color:#fff;border-color:#5ae;background:rgba(40,90,180,0.4);
+  box-shadow:0 0 12px rgba(80,160,255,0.2)}
+.tab.active-tank{color:#fff;border-color:#f80;background:rgba(120,60,0,0.4);
+  box-shadow:0 0 12px rgba(255,128,0,0.2)}
+
+#status-bar{display:flex;gap:10px;padding:7px 16px;border-bottom:1px solid rgba(80,160,255,0.06);font-size:10px;color:#678}
+.si{display:flex;align-items:center;gap:4px}
+.sd{width:6px;height:6px;border-radius:50%}
+.sd-on{background:#0f0;box-shadow:0 0 6px #0f0}
+.sd-off{background:#f33;box-shadow:0 0 4px #f33}
+
+#metrics{padding:8px 16px;border-bottom:1px solid rgba(80,160,255,0.06);flex-shrink:0}
+#metrics h2{font-size:9px;color:#456;margin-bottom:5px;letter-spacing:2px}
+.mr{display:flex;justify-content:space-between;padding:2px 0}
+.ml{font-size:10px;color:#678}
+.mv{font-size:11px;font-weight:700;font-family:'SF Mono','Fira Code',monospace}
+
+#chart-box{padding:8px 16px;height:145px;flex-shrink:0;border-bottom:1px solid rgba(80,160,255,0.06)}
+#chart-box h2{font-size:9px;color:#456;margin-bottom:4px;letter-spacing:2px}
+#spe-chart{width:100%;height:110px}
+
+/* Score chart for tank mode */
+#score-chart-box{padding:8px 16px;height:145px;flex-shrink:0;border-bottom:1px solid rgba(80,160,255,0.06);display:none}
+#score-chart-box h2{font-size:9px;color:#456;margin-bottom:4px;letter-spacing:2px}
+#score-chart{width:100%;height:110px}
+
+/* Tank HUD */
+#tank-hud{padding:8px 16px;border-bottom:1px solid rgba(80,160,255,0.06);flex-shrink:0;display:none}
+#tank-hud h2{font-size:9px;color:#456;margin-bottom:5px;letter-spacing:2px}
+
+/* Round result overlay */
+#round-result{position:fixed;top:50%;left:34%;transform:translate(-50%,-50%);z-index:50;
+  background:rgba(2,8,24,0.95);border:1px solid rgba(80,160,255,0.3);border-radius:8px;
+  padding:24px 40px;text-align:center;display:none;pointer-events:none;
+  box-shadow:0 0 60px rgba(80,160,255,0.15)}
+#round-result .grade{font-size:72px;font-weight:900;line-height:1}
+#round-result .score-num{font-size:20px;color:#678;margin-top:4px}
+#round-result .details{font-size:11px;color:#456;margin-top:10px;line-height:1.6}
+
+#layers{padding:8px 16px;border-bottom:1px solid rgba(80,160,255,0.06);flex-shrink:0}
+#layers h2{font-size:9px;color:#456;margin-bottom:4px;letter-spacing:2px}
+.li{display:flex;justify-content:space-between;align-items:center;padding:1.5px 0;font-size:9.5px}
+.ld{width:5px;height:5px;border-radius:50%;margin-right:4px;display:inline-block;transition:box-shadow 0.3s}
+.ln{display:flex;align-items:center;color:#8ab}
+.lb{font-size:7px;color:#345;margin-left:3px}
+.lc{color:#567;font-family:'SF Mono',monospace;font-size:9px}
+
+#activity{flex:1;overflow-y:auto;padding:8px 16px;min-height:0}
+#activity h2{font-size:9px;color:#456;margin-bottom:4px;letter-spacing:2px;position:sticky;top:0;background:rgba(2,8,24,0.97);padding-bottom:3px}
+.le{font-size:8.5px;padding:1.5px 0;border-bottom:1px solid rgba(255,255,255,0.015);display:flex;gap:5px}
+.lt{color:#234;flex-shrink:0;width:55px}
+.ly{flex-shrink:0;width:55px;font-weight:600}
+.lm{color:#456;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+#ctrls{padding:7px 16px;border-top:1px solid rgba(80,160,255,0.1);display:flex;gap:5px;flex-shrink:0;flex-wrap:wrap}
+.btn{padding:4px 10px;border:1px solid rgba(80,160,255,0.15);background:rgba(10,30,60,0.5);color:#5ae;
+  border-radius:3px;cursor:pointer;font-size:9px;font-family:inherit;transition:all 0.2s}
+.btn:hover{background:rgba(20,50,100,0.6);border-color:rgba(80,160,255,0.3)}
+.btn.on{background:rgba(30,70,140,0.5);border-color:#5ae;color:#fff}
+.btn-reset{border-color:rgba(255,100,80,0.25)!important;color:#f86!important}
+.btn-reset:hover{background:rgba(80,30,20,0.5)!important;border-color:rgba(255,100,80,0.5)!important}
+
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:#234;border-radius:1px}
+
+#overlay{position:absolute;top:14px;left:18px;z-index:5;pointer-events:none}
+#overlay h1{font-size:18px;color:#5ae;font-weight:800;
+  text-shadow:0 0 40px rgba(80,160,255,0.5),0 0 80px rgba(80,160,255,0.2)}
+#overlay p{font-size:9px;color:#345;margin-top:2px;letter-spacing:1px}
+
+#legend{position:absolute;bottom:14px;left:18px;z-index:5;pointer-events:none;
+  background:rgba(2,8,24,0.85);border:1px solid rgba(80,160,255,0.08);border-radius:3px;padding:8px 12px}
+#legend h3{font-size:8px;color:#456;margin-bottom:4px;letter-spacing:1px}
+.lr{display:flex;align-items:center;gap:5px;padding:0.5px 0;font-size:8px;color:#678}
+.ls{width:8px;height:2.5px;border-radius:1px}
+
+#info-banner{padding:6px 16px;border-top:1px solid rgba(80,160,255,0.06);
+  font-size:8.5px;color:#456;line-height:1.5;flex-shrink:0}
+
+/* Game canvases container */
+#game-box{position:absolute;top:14px;right:33%;z-index:6;
+  background:rgba(2,8,24,0.9);border:1px solid rgba(80,160,255,0.15);border-radius:4px;overflow:hidden}
+#game-header{display:flex;justify-content:space-between;padding:5px 10px;
+  font-size:9px;color:#5ae;border-bottom:1px solid rgba(80,160,255,0.1);
+  background:rgba(10,30,60,0.5)}
+#game-stats{color:#678}
+#aim-canvas{display:block}
+#tank-canvas{display:none}
+
+/* LLM indicator */
+#llm-indicator{position:absolute;top:14px;left:18px;z-index:7;display:none;
+  background:rgba(2,8,24,0.9);border:1px solid rgba(255,160,0,0.2);border-radius:4px;
+  padding:6px 12px;font-size:9px;pointer-events:none}
+#llm-indicator .llm-dot{width:6px;height:6px;border-radius:50%;background:#f80;display:inline-block;margin-right:5px;
+  box-shadow:0 0 6px #f80}
+#llm-indicator .llm-label{color:#f80}
+#llm-bubble{position:absolute;bottom:44px;right:33%;z-index:6;display:none;
+  background:rgba(40,20,0,0.9);border:1px solid rgba(255,160,0,0.3);border-radius:6px;
+  padding:6px 12px;font-size:10px;color:#fa0;pointer-events:none;
+  max-width:200px;text-align:center}
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+<div id="overlay">
+  <h1>数字小脑</h1>
+  <p>Digital Cerebellum — 实时神经活动可视化</p>
+</div>
+
+<div id="game-box">
+  <div id="game-header"><span id="game-title">选择模式开始</span><span id="game-stats">等待中...</span></div>
+  <div id="game-placeholder" style="width:560px;height:420px;display:flex;align-items:center;justify-content:center;
+    color:#456;font-size:13px;letter-spacing:2px">点击右侧标签开始</div>
+  <canvas id="aim-canvas" width="480" height="360" style="display:none"></canvas>
+  <canvas id="tank-canvas" width="560" height="420" style="display:none"></canvas>
+</div>
+
+<div id="llm-indicator"><span class="llm-dot"></span><span class="llm-label">LLM 皮层</span> <span id="llm-call-count">0</span> 次调用</div>
+<div id="llm-bubble"></div>
+
+<div id="round-result">
+  <div class="grade" id="rr-grade">S</div>
+  <div class="score-num" id="rr-score">520 分</div>
+  <div class="details" id="rr-details"></div>
+</div>
+
+<div id="legend">
+  <h3>小脑解剖结构</h3>
+  <div class="lr"><span class="ls" style="background:#ff7040"></span>浦肯野细胞层 Purkinje</div>
+  <div class="lr"><span class="ls" style="background:#eec030"></span>颗粒细胞层 Granule</div>
+  <div class="lr"><span class="ls" style="background:#40a0ff"></span>小脑深核 Deep Nuclei</div>
+  <div class="lr"><span class="ls" style="background:#ff2828"></span>攀缘纤维 Climbing</div>
+  <div class="lr"><span class="ls" style="background:#e0e0ff"></span>苔藓纤维 Mossy</div>
+  <div class="lr"><span class="ls" style="background:#40ffd0"></span>平行纤维 Parallel</div>
+  <div class="lr"><span class="ls" style="background:#a050ff"></span>白质/生命之树 Arbor Vitae</div>
+</div>
+
+<div id="panel">
+  <div id="panel-header"><h1>小脑控制台</h1><div class="sub">Cerebellar Cortex Activity Monitor</div></div>
+
+  <div id="mode-tabs">
+    <div class="tab" id="tab-aim" onclick="switchMode('aim')">瞄准训练</div>
+    <div class="tab" id="tab-tank" onclick="switchMode('tank')">坦克大战</div>
+  </div>
+
+  <div id="status-bar">
+    <div class="si"><div class="sd sd-off" id="ws-dot"></div><span id="ws-label">断开</span></div>
+    <div class="si">步数: <strong id="step-count">0</strong></div>
+    <div class="si">事件/秒: <strong id="eps-count">0</strong></div>
+  </div>
+  <div id="metrics">
+    <h2>实时指标</h2>
+    <div class="mr"><span class="ml">感觉预测误差 SPE</span><span class="mv" id="m-spe" style="color:#f66">0.000</span></div>
+    <div class="mr"><span class="ml">奖赏信号</span><span class="mv" id="m-reward" style="color:#6f6">0.000</span></div>
+    <div class="mr"><span class="ml">小脑校正量</span><span class="mv" id="m-corr" style="color:#ff6">0.000</span></div>
+    <div class="mr"><span class="ml">动作延迟 (ms)</span><span class="mv" id="m-lat" style="color:#5ae">0.00</span></div>
+    <div class="mr"><span class="ml">前向模型置信度</span><span class="mv" id="m-conf" style="color:#fa6">0.000</span></div>
+  </div>
+
+  <!-- Tank HUD -->
+  <div id="tank-hud">
+    <h2>坦克大战状态</h2>
+    <div class="mr"><span class="ml">杀敌数</span><span class="mv" id="t-kills" style="color:#f80">0</span></div>
+    <div class="mr"><span class="ml">命中率</span><span class="mv" id="t-hitrate" style="color:#6f6">0%</span></div>
+    <div class="mr"><span class="ml">存活时间</span><span class="mv" id="t-survive" style="color:#5ae">0s</span></div>
+    <div class="mr"><span class="ml">闪避次数</span><span class="mv" id="t-dodges" style="color:#ff6">0</span></div>
+    <div class="mr"><span class="ml">LLM调用</span><span class="mv" id="t-llm" style="color:#fa6">0</span></div>
+    <div class="mr"><span class="ml">血量</span><span class="mv" id="t-hp" style="color:#f66">100</span></div>
+  </div>
+
+  <div id="chart-box"><h2>预测误差趋势</h2><canvas id="spe-chart"></canvas></div>
+
+  <div id="score-chart-box"><h2>学习曲线（跨回合）</h2><canvas id="score-chart"></canvas></div>
+
+  <div id="layers">
+    <h2>生物学结构活动</h2>
+    <div class="li"><span class="ln"><span class="ld" id="dot-FeatureEncoder" style="background:#ddf"></span>苔藓纤维<span class="lb">Mossy</span></span><span class="lc" id="cnt-FeatureEncoder">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-PatternSeparator" style="background:#ec0"></span>颗粒细胞<span class="lb">Granule</span></span><span class="lc" id="cnt-PatternSeparator">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-PredictionEngine" style="background:#f60"></span>浦肯野细胞<span class="lb">Purkinje</span></span><span class="lc" id="cnt-PredictionEngine">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-DecisionRouter" style="background:#48f"></span>小脑深核<span class="lb">Nuclei</span></span><span class="lc" id="cnt-DecisionRouter">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-ErrorComparator" style="background:#f33"></span>攀缘纤维<span class="lb">Climbing</span></span><span class="lc" id="cnt-ErrorComparator">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-SomaticMarker" style="background:#f80"></span>躯体标记<span class="lb">Somatic</span></span><span class="lc" id="cnt-SomaticMarker">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-CuriosityDrive" style="background:#4f4"></span>好奇心驱动<span class="lb">Curiosity</span></span><span class="lc" id="cnt-CuriosityDrive">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-StepMonitor" style="background:#aaf"></span>步骤监控<span class="lb">Monitor</span></span><span class="lc" id="cnt-StepMonitor">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-GUIController" style="background:#5ae"></span>运动输出<span class="lb">Motor</span></span><span class="lc" id="cnt-GUIController">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-FluidMemory" style="background:#a0f"></span>流体记忆<span class="lb">Memory</span></span><span class="lc" id="cnt-FluidMemory">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-SkillStore" style="background:#0fc"></span>技能存储<span class="lb">Skill</span></span><span class="lc" id="cnt-SkillStore">0</span></div>
+    <div class="li"><span class="ln"><span class="ld" id="dot-LLM" style="background:#f80"></span>LLM皮层<span class="lb">Cortex</span></span><span class="lc" id="cnt-LLM">0</span></div>
+  </div>
+  <div id="activity"><h2>神经活动日志</h2><div id="log-entries"></div></div>
+  <div id="info-banner">
+    <span id="info-text" style="color:#5ae">选择上方标签开始 Demo</span>
+  </div>
+  <div id="ctrls">
+    <button class="btn on" id="btn-rotate" onclick="toggleRotate()">自动旋转</button>
+    <button class="btn" id="btn-pause" onclick="togglePause()">暂停</button>
+    <button class="btn btn-reset" onclick="resetCerebellum()">重置记忆</button>
+    <button class="btn" onclick="clearLog()">清空日志</button>
+  </div>
+</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"}}</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+const MODULE_LAYER = {
+  FeatureEncoder:'mossy', PatternSeparator:'granule', PredictionEngine:'purkinje',
+  DecisionRouter:'nuclei', ErrorComparator:'climbing', SomaticMarker:'nuclei',
+  CuriosityDrive:'granule', StepMonitor:'mossy', GUIController:'nuclei',
+  ErrorCascadeDetector:'climbing', FluidMemory:'nuclei', SkillStore:'purkinje',
+  LLM:'cortex',
+};
+
+/* ── Scene ── */
+const box = document.getElementById('canvas-container');
+const W = box.clientWidth, H = box.clientHeight;
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x020818, 0.025);
+const camera = new THREE.PerspectiveCamera(45, W/H, 0.1, 200);
+camera.position.set(0, 2, 11);
+const renderer = new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setSize(W,H); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 0.9;
+box.appendChild(renderer.domElement);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping=true; orbit.dampingFactor=0.05;
+orbit.autoRotate=true; orbit.autoRotateSpeed=0.35;
+orbit.target.set(0,0.3,0);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene,camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(W,H),1.5,0.4,0.85);
+bloom.threshold=0.05; bloom.strength=2.0; bloom.radius=0.8;
+composer.addPass(bloom);
+
+scene.add(new THREE.AmbientLight(0x081020,0.4));
+const cLight = new THREE.PointLight(0x3366cc,2,20); cLight.position.set(0,0,0); scene.add(cLight);
+
+const G = new THREE.Group(); scene.add(G);
+
+/* ── Cerebellum shape ── */
+function cPt(u, v, rOff=0) {
+  const th = (u - 0.5) * Math.PI * 1.9;
+  const ph = v * Math.PI * 0.95 + 0.025 * Math.PI;
+  const rBase = 3.0 + rOff;
+  const folia = 0.15 * Math.sin(ph * 16) * (0.5 + 0.5*Math.cos(th));
+  const hemisphereGap = 0.15 * Math.exp(-Math.pow(th, 2) * 4);
+  const r = rBase + folia - hemisphereGap;
+  return new THREE.Vector3(
+    r * Math.sin(ph) * Math.cos(th),
+    r * 0.45 * Math.cos(ph),
+    r * Math.sin(ph) * Math.sin(th) * 0.8
+  );
+}
+
+/* Translucent shell */
+const shellGeo = new THREE.BufferGeometry();
+const shellVerts = [], shellIdx = [];
+const uSegs = 60, vSegs = 50;
+for (let j = 0; j <= vSegs; j++) {
+  for (let i = 0; i <= uSegs; i++) {
+    const p = cPt(i/uSegs, j/vSegs, 0.1);
+    shellVerts.push(p.x, p.y, p.z);
+    if (i < uSegs && j < vSegs) {
+      const a = j*(uSegs+1)+i, b = a+1, c = a+uSegs+1, d = c+1;
+      shellIdx.push(a,c,b, b,c,d);
+    }
+  }
+}
+shellGeo.setAttribute('position', new THREE.Float32BufferAttribute(shellVerts,3));
+shellGeo.setIndex(shellIdx);
+shellGeo.computeVertexNormals();
+const shellMat = new THREE.MeshPhysicalMaterial({
+  color:0x1a3060, transparent:true, opacity:0.06, roughness:0.8, metalness:0.1,
+  side:THREE.DoubleSide, depthWrite:false,
+});
+G.add(new THREE.Mesh(shellGeo, shellMat));
+const wireMat = new THREE.MeshBasicMaterial({color:0x2244aa, wireframe:true, transparent:true, opacity:0.02});
+G.add(new THREE.Mesh(shellGeo.clone(), wireMat));
+
+/* Particle shader */
+function pMat(color, glow=1.0) {
+  return new THREE.ShaderMaterial({
+    uniforms:{ uCol:{value:new THREE.Color(color)}, uB:{value:0.35}, uT:{value:0}, uGlow:{value:glow} },
+    vertexShader:`
+      attribute float sz; attribute float ph;
+      varying float vA; uniform float uT;
+      void main(){
+        float p = 0.5 + 0.5*sin(uT*1.2+ph);
+        vA = 0.3 + 0.5*p;
+        vec3 pos = position + 0.01*sin(uT*1.8+position.x*6.0+ph);
+        vec4 mv = modelViewMatrix*vec4(pos,1.0);
+        gl_PointSize = sz * (5.0/-mv.z);
+        gl_Position = projectionMatrix*mv;
+      }`,
+    fragmentShader:`
+      uniform vec3 uCol; uniform float uB; uniform float uGlow; varying float vA;
+      void main(){
+        float d = length(gl_PointCoord-0.5);
+        if(d>0.5) discard;
+        float g = exp(-d*4.0*uGlow);
+        float core = smoothstep(0.12,0.0,d);
+        vec3 c = uCol*uB + vec3(1.0)*core*uB*0.6;
+        gl_FragColor = vec4(c, vA*g);
+      }`,
+    transparent:true, blending:THREE.AdditiveBlending, depthWrite:false,
+  });
+}
+
+function mkLayer(count, color, rOff, szRange, glow=1.0) {
+  const pos = new Float32Array(count*3);
+  const sz = new Float32Array(count);
+  const ph = new Float32Array(count);
+  for(let i=0;i<count;i++){
+    const p = cPt(Math.random(), Math.random(), rOff + (Math.random()-0.5)*0.2);
+    pos[i*3]=p.x; pos[i*3+1]=p.y; pos[i*3+2]=p.z;
+    sz[i]=szRange[0]+Math.random()*(szRange[1]-szRange[0]);
+    ph[i]=Math.random()*Math.PI*2;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+  geo.setAttribute('sz',new THREE.Float32BufferAttribute(sz,1));
+  geo.setAttribute('ph',new THREE.Float32BufferAttribute(ph,1));
+  const mat = pMat(color, glow);
+  const pts = new THREE.Points(geo,mat);
+  G.add(pts);
+  return {mesh:pts, mat};
+}
+
+const L = {};
+L.purkinje = mkLayer(600, 0xff7040, 0.0, [3,6], 1.2);
+L.granule  = mkLayer(1800, 0xeec030, -0.5, [1.5,3], 0.8);
+L.nuclei   = mkLayer(250, 0x40a0ff, -2.0, [4,8], 1.5);
+
+/* Neuron nodes */
+const neurons = [];
+function addNeuron(pos, color, size=0.08) {
+  const geo = new THREE.SphereGeometry(size, 12, 12);
+  const mat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.9});
+  const m = new THREE.Mesh(geo, mat);
+  m.position.copy(pos);
+  G.add(m);
+  const haloGeo = new THREE.SphereGeometry(size*2.5, 8, 8);
+  const haloMat = new THREE.MeshBasicMaterial({color, transparent:true, opacity:0.15});
+  const halo = new THREE.Mesh(haloGeo, haloMat);
+  halo.position.copy(pos);
+  G.add(halo);
+  neurons.push({mesh:m, halo, mat, haloMat, baseOp:0.9, pulse:0, layer:null});
+  return neurons.length-1;
+}
+
+const neuronIdxByLayer = {purkinje:[], granule:[], nuclei:[], mossy:[], climbing:[]};
+for(let i=0;i<35;i++){
+  const p = cPt(Math.random(), Math.random(), 0.05);
+  const idx = addNeuron(p, 0xff9060, 0.06);
+  neurons[idx].layer='purkinje';
+  neuronIdxByLayer.purkinje.push(idx);
+}
+for(let i=0;i<45;i++){
+  const p = cPt(Math.random(), Math.random(), -0.4);
+  const idx = addNeuron(p, 0xeecc40, 0.04);
+  neurons[idx].layer='granule';
+  neuronIdxByLayer.granule.push(idx);
+}
+for(let i=0;i<15;i++){
+  const r = 0.5+Math.random()*0.8;
+  const a = Math.random()*Math.PI*2;
+  const p = new THREE.Vector3(Math.cos(a)*r, -1.2+Math.random()*0.6, Math.sin(a)*r*0.7);
+  const idx = addNeuron(p, 0x50b0ff, 0.1);
+  neurons[idx].layer='nuclei';
+  neuronIdxByLayer.nuclei.push(idx);
+}
+
+/* Neural connections */
+function connectNeurons(idxA, idxB, color, opacity=0.08) {
+  const a = neurons[idxA].mesh.position, b = neurons[idxB].mesh.position;
+  const pts = [];
+  const segs = 8;
+  for(let i=0;i<=segs;i++){
+    const t=i/segs;
+    const mid=1-Math.abs(t-0.5)*2;
+    pts.push(new THREE.Vector3(
+      a.x+(b.x-a.x)*t+(Math.random()-0.5)*0.1*mid,
+      a.y+(b.y-a.y)*t+Math.sin(t*Math.PI)*0.15*mid,
+      a.z+(b.z-a.z)*t+(Math.random()-0.5)*0.1*mid,
+    ));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({color, transparent:true, opacity});
+  G.add(new THREE.Line(geo,mat));
+  return mat;
+}
+
+const connMats = [];
+for(let i=0;i<neuronIdxByLayer.purkinje.length;i++){
+  const j=(i+1)%neuronIdxByLayer.purkinje.length;
+  connMats.push({mat:connectNeurons(neuronIdxByLayer.purkinje[i],neuronIdxByLayer.purkinje[j],0xff8060,0.04), layer:'purkinje'});
+}
+for(let i=0;i<30;i++){
+  const gi = neuronIdxByLayer.granule[i % neuronIdxByLayer.granule.length];
+  const pi = neuronIdxByLayer.purkinje[i % neuronIdxByLayer.purkinje.length];
+  connMats.push({mat:connectNeurons(gi,pi,0x40ffd0,0.03), layer:'granule'});
+}
+for(let i=0;i<neuronIdxByLayer.nuclei.length;i++){
+  const pi = neuronIdxByLayer.purkinje[i*2 % neuronIdxByLayer.purkinje.length];
+  connMats.push({mat:connectNeurons(neuronIdxByLayer.nuclei[i],pi,0x4080ff,0.05), layer:'nuclei'});
+}
+
+/* Mossy fibers */
+const mossyMats = [];
+for(let i=0;i<25;i++){
+  const a = (Math.random()-0.5)*Math.PI*1.5;
+  const z = (Math.random()-0.5)*2.5;
+  const target = cPt(Math.random(), Math.random(), -0.4);
+  const pts = [];
+  for(let t=0;t<=1;t+=0.08){
+    pts.push(new THREE.Vector3(
+      Math.sin(a)*t*2 + target.x*(1-Math.pow(1-t,2))*0.3,
+      -5+t*5 + Math.sin(t*Math.PI)*0.4,
+      z*t + target.z*(1-Math.pow(1-t,2))*0.3
+    ));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({color:0xccccff, transparent:true, opacity:0.04});
+  G.add(new THREE.Line(geo,mat));
+  mossyMats.push(mat);
+}
+
+/* Arbor vitae */
+function branch(start, dir, depth, max) {
+  if(depth>max) return;
+  const len = 1.0/(depth+1);
+  const pts = [start.clone()];
+  let p = start.clone();
+  for(let t=0;t<6;t++){
+    p = p.clone().add(dir.clone().multiplyScalar(len*0.18));
+    p.x+=(Math.random()-0.5)*0.04; p.z+=(Math.random()-0.5)*0.04;
+    pts.push(p.clone());
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  const mat = new THREE.LineBasicMaterial({color:0xa050ff, transparent:true, opacity:0.06/(depth*0.5+1)});
+  G.add(new THREE.Line(geo,mat));
+  const sp = 0.5+Math.random()*0.3;
+  branch(p, dir.clone().applyAxisAngle(new THREE.Vector3(0,0,1),sp), depth+1, max);
+  branch(p, dir.clone().applyAxisAngle(new THREE.Vector3(0,0,1),-sp), depth+1, max);
+}
+branch(new THREE.Vector3(0,-2.5,0), new THREE.Vector3(0.7,1,0).normalize(), 0, 5);
+branch(new THREE.Vector3(0,-2.5,0), new THREE.Vector3(-0.7,1,0).normalize(), 0, 5);
+branch(new THREE.Vector3(0,-2.5,0), new THREE.Vector3(0,1,0.4).normalize(), 0, 4);
+branch(new THREE.Vector3(0,-2.5,0), new THREE.Vector3(0,1,-0.4).normalize(), 0, 4);
+
+/* Climbing fibers (error / cortex signals) */
+let lightning = [];
+function spawnCF(intensity=1, color=null){
+  const start = new THREE.Vector3((Math.random()-0.5)*1.5, -3.5, (Math.random()-0.5)*1.5);
+  const end = cPt(Math.random(), Math.random(), 0.05);
+  const pts = [];
+  for(let i=0;i<=14;i++){
+    const t=i/14, mid=1-Math.abs(t-0.5)*2;
+    pts.push(new THREE.Vector3(
+      start.x+(end.x-start.x)*t + (Math.random()-0.5)*0.5*mid,
+      start.y+(end.y-start.y)*t + Math.sin(t*Math.PI)*1.0,
+      start.z+(end.z-start.z)*t + (Math.random()-0.5)*0.5*mid,
+    ));
+  }
+  const geo = new THREE.BufferGeometry().setFromPoints(pts);
+  let col = color;
+  if(!col) col = intensity>2 ? 0xff0000 : intensity>1 ? 0xff3300 : 0xff4422;
+  const mat = new THREE.LineBasicMaterial({color:col, transparent:true, opacity:0.9});
+  const mesh = new THREE.Line(geo,mat);
+  G.add(mesh);
+  lightning.push({mesh, life:1.0});
+}
+
+/* Deep nuclei core glow */
+const coreGeo = new THREE.SphereGeometry(0.5, 24, 24);
+const coreMat = new THREE.MeshBasicMaterial({color:0x2050aa, transparent:true, opacity:0.15});
+const core = new THREE.Mesh(coreGeo, coreMat); core.position.set(0,-1.2,0); G.add(core);
+const haloGeo2 = new THREE.SphereGeometry(1.2, 16, 16);
+const haloMat2 = new THREE.MeshBasicMaterial({color:0x102050, transparent:true, opacity:0.06});
+const halo2 = new THREE.Mesh(haloGeo2, haloMat2); halo2.position.set(0,-1.2,0); G.add(halo2);
+
+/* ── Cortex flash (white light for LLM calls) ── */
+let cortexFlash = 0;
+
+/* ── Charts ── */
+const ctx = document.getElementById('spe-chart').getContext('2d');
+const sD = {labels:[], spe:[], reward:[]};
+const chart = new Chart(ctx,{type:'line',data:{labels:sD.labels,datasets:[
+  {label:'预测误差',data:sD.spe,borderColor:'#f66',backgroundColor:'rgba(255,80,80,0.06)',borderWidth:1.5,pointRadius:0,tension:0.3,fill:true},
+  {label:'奖赏信号',data:sD.reward,borderColor:'#6f6',backgroundColor:'rgba(80,255,80,0.06)',borderWidth:1.5,pointRadius:0,tension:0.3,fill:true},
+]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
+  scales:{x:{display:false},y:{grid:{color:'rgba(80,160,255,0.04)'},ticks:{color:'#345',font:{size:7}}}},
+  plugins:{legend:{labels:{color:'#456',font:{size:7}}}}}});
+
+const sctx = document.getElementById('score-chart').getContext('2d');
+const scD = {labels:[], scores:[], hitRates:[], llmCalls:[]};
+const scoreChart = new Chart(sctx,{type:'line',data:{labels:scD.labels,datasets:[
+  {label:'总分',data:scD.scores,borderColor:'#f80',borderWidth:1.5,pointRadius:2,tension:0.3,yAxisID:'y'},
+  {label:'命中率%',data:scD.hitRates,borderColor:'#6f6',borderWidth:1.5,pointRadius:2,tension:0.3,yAxisID:'y1'},
+  {label:'LLM调用',data:scD.llmCalls,borderColor:'#fa6',borderWidth:1.5,pointRadius:2,tension:0.3,yAxisID:'y1'},
+]},options:{responsive:true,maintainAspectRatio:false,animation:{duration:0},
+  scales:{
+    x:{display:true,ticks:{color:'#345',font:{size:7}}},
+    y:{position:'left',grid:{color:'rgba(80,160,255,0.04)'},ticks:{color:'#345',font:{size:7}}},
+    y1:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#345',font:{size:7}},min:0,max:100}
+  },
+  plugins:{legend:{labels:{color:'#456',font:{size:7}}}}}});
+
+/* ── State ── */
+let currentMode = 'idle';
+let paused=false, stepCount=0, eventCount=0, epsCount=0, lastSecEvt=0;
+const modCounts={};
+const layerPulse = {purkinje:0, granule:0, nuclei:0, mossy:0, climbing:0, cortex:0};
+
+/* ── WebSocket ── */
+function connect(){
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen=()=>{document.getElementById('ws-dot').className='sd sd-on';document.getElementById('ws-label').textContent='已连接'};
+  ws.onclose=()=>{document.getElementById('ws-dot').className='sd sd-off';document.getElementById('ws-label').textContent='重连中...';setTimeout(connect,2000)};
+  ws.onmessage=e=>{if(!paused)try{handleEvent(JSON.parse(e.data))}catch(err){console.error(err)}};
+}
+connect();
+
+const TN={encode:'编码',separate:'分离',predict:'预测',route:'路由',error:'误差',cascade:'级联',
+  skill_match:'技能命中',skill_learn:'技能习得',memory_store:'记忆存储',memory_retrieve:'记忆检索',
+  gut_feeling:'直觉',curiosity:'好奇',step:'步骤',episode_start:'回合开始',episode_end:'回合结束',
+  cortex_call:'皮层决策',round_end:'回合结束',tank_state:'坦克状态',mode_switch:'模式切换'};
+const TC={encode:'#aac',separate:'#ec0',predict:'#f80',route:'#48f',error:'#f33',cascade:'#f00',
+  skill_match:'#0fc',skill_learn:'#0fc',memory_store:'#a0f',memory_retrieve:'#a0f',
+  gut_feeling:'#f80',curiosity:'#4f4',step:'#5ae',cortex_call:'#ff0',round_end:'#fa0',
+  tank_state:'#345',mode_switch:'#5ae'};
+
+/* ── Mode switching ── */
+window.switchMode = function(mode) {
+  document.querySelectorAll('.tab').forEach(t=>t.className='tab');
+  const tab = document.getElementById(`tab-${mode}`);
+  if(tab) tab.className = mode==='tank' ? 'tab active-tank' : 'tab active';
+
+  fetch(`/api/mode/${mode}`,{method:'POST'});
+  currentMode = mode;
+
+  document.getElementById('game-placeholder').style.display = 'none';
+  document.getElementById('aim-canvas').style.display = mode==='aim' ? 'block' : 'none';
+  document.getElementById('tank-canvas').style.display = mode==='tank' ? 'block' : 'none';
+  document.getElementById('tank-hud').style.display = mode==='tank' ? 'block' : 'none';
+  document.getElementById('score-chart-box').style.display = mode==='tank' ? 'block' : 'none';
+  document.getElementById('llm-indicator').style.display = mode==='tank' ? 'block' : 'none';
+  document.getElementById('game-title').textContent = mode==='aim' ? '瞄准训练实况' : mode==='tank' ? '坦克大战实况' : '选择模式开始';
+  document.getElementById('info-text').innerHTML = mode==='aim'
+    ? '<span style="color:#5ae">纯小脑学习</span> — 无 LLM 参与，通过预测误差自主学习运动控制。'
+    : mode==='tank'
+    ? '<span style="color:#f80">皮层+小脑协作</span> — LLM 做战略决策，小脑学习精准微操。随回合推进 LLM 调用减少。'
+    : '选择上方标签开始 Demo';
+
+  sD.labels.length=0;sD.spe.length=0;sD.reward.length=0;chart.update();
+  stepCount=0;eventCount=0;
+  Object.keys(modCounts).forEach(k=>modCounts[k]=0);
+  document.querySelectorAll('.lc').forEach(e=>e.textContent='0');
+  document.getElementById('step-count').textContent='0';
+  document.getElementById('game-stats').textContent='开始中...';
+  aimHits=0;aimEpisode=0;cursorTrail=[];
+  llmCallCount=0;
+  document.getElementById('llm-call-count').textContent='0';
+};
+
+/* ── Event handling ── */
+let llmCallCount = 0;
+let tankGameState = null;
+let lastLLMDecision = '';
+
+function handleEvent(evt){
+  eventCount++;
+  const mod=evt.module||'',type=evt.event_type||'',data=evt.data||{};
+
+  if(type==='mode_switch') return;
+  if(type==='tank_state' && currentMode!=='tank') return;
+  if(type==='aim' && currentMode!=='aim') return;
+
+  modCounts[mod]=(modCounts[mod]||0)+1;
+  const ce=document.getElementById(`cnt-${mod}`);
+  if(ce) ce.textContent=modCounts[mod];
+  const de=document.getElementById(`dot-${mod}`);
+  if(de){de.style.boxShadow=`0 0 8px ${de.style.background}`;setTimeout(()=>de.style.boxShadow='none',300)}
+
+  const ml = MODULE_LAYER[mod];
+  if(ml) layerPulse[ml] = Math.min((layerPulse[ml]||0)+0.6, 2.5);
+
+  if(type==='step'&&mod==='GUIController'){
+    stepCount=data.step||stepCount+1;
+    document.getElementById('step-count').textContent=stepCount;
+    document.getElementById('m-spe').textContent=(data.spe||0).toFixed(3);
+    document.getElementById('m-reward').textContent=(data.reward||0).toFixed(3);
+    document.getElementById('m-corr').textContent=(data.correction_mag||0).toFixed(3);
+    document.getElementById('m-lat').textContent=(data.latency_ms||0).toFixed(2);
+    if(data.confidence !== undefined)
+      document.getElementById('m-conf').textContent=(data.confidence||0).toFixed(3);
+    sD.labels.push(stepCount); sD.spe.push(data.spe||0); sD.reward.push(data.reward||0);
+    if(sD.labels.length>200){sD.labels.shift();sD.spe.shift();sD.reward.shift()}
+    if(stepCount%10===0) chart.update();
+  }
+  if(type==='step'&&mod==='StepMonitor'&&data.phase==='before')
+    document.getElementById('m-conf').textContent=(data.confidence||0).toFixed(3);
+
+  if(type==='error'){ spawnCF(data.spe||1); if((data.spe||0)>1) spawnCF(2); }
+  if(type==='cascade'){ for(let i=0;i<6;i++) spawnCF(3); flashScreen(); }
+  if(type==='gut_feeling') layerPulse.nuclei=2.5;
+  if(type==='curiosity') layerPulse.granule=2.0;
+  if(type==='memory_store'||type==='memory_retrieve') layerPulse.nuclei=1.5;
+  if(type==='skill_match'||type==='skill_learn') layerPulse.purkinje=2.0;
+
+  /* Cortex (LLM) call — white flash on 3D brain */
+  if(type==='cortex_call'){
+    llmCallCount++;
+    document.getElementById('llm-call-count').textContent=llmCallCount;
+    cortexFlash = 2.0;
+    for(let i=0;i<3;i++) spawnCF(1, 0xffffff);
+    layerPulse.cortex = 3.0;
+    lastLLMDecision = data.decision||'';
+    const bubble = document.getElementById('llm-bubble');
+    const stratMap = {aggressive:'进攻',defensive:'防御',neutral:'中立',retreat:'撤退'};
+    bubble.textContent = `目标 ${String.fromCharCode(65+(data.target||0))} | ${stratMap[lastLLMDecision]||lastLLMDecision}`;
+    bubble.style.display='block';
+    setTimeout(()=>bubble.style.display='none', 3000);
+  }
+
+  if(type==='reset'){
+    for(let i=0;i<10;i++) spawnCF(0.5);
+    llmCallCount=0;
+    document.getElementById('llm-call-count').textContent='0';
+    scD.labels.length=0;scD.scores.length=0;scD.hitRates.length=0;scD.llmCalls.length=0;
+    scoreChart.update();
+    return;
+  }
+
+  /* Aim trainer events */
+  if(type==='aim'){
+    aimState={cx:data.cx||0,cy:data.cy||0,tx:data.tx||0,ty:data.ty||0,
+      tr:data.tr||35,sw:data.sw||800,sh:data.sh||600,hit:data.hit||false};
+    if(data.hit){aimHits++;hitFlash=1.0;cursorTrail=[];
+      document.getElementById('game-stats').textContent=`命中: ${aimHits} | 回合: ${aimEpisode}`}
+  }
+  if(type==='episode_start'&&mod==='AimTrainer'){
+    aimEpisode=data.episode||0;cursorTrail=[];
+    document.getElementById('game-stats').textContent=`命中: ${aimHits} | 回合: ${aimEpisode}`;
+  }
+  if(type==='episode_end'&&mod==='AimTrainer'){
+    document.getElementById('game-stats').textContent=`命中: ${aimHits} | 回合: ${aimEpisode} | 命中率: ${((data.hit_rate||0)*100).toFixed(0)}%`;
+  }
+
+  /* Tank state events */
+  if(type==='tank_state'){
+    tankGameState = data;
+    const sf = data.shots_fired||0;
+    const sh = data.shots_hit||0;
+    const hr = sf>0 ? (sh/sf*100).toFixed(0) : '0';
+    document.getElementById('t-kills').textContent = data.kills||0;
+    document.getElementById('t-hitrate').textContent = hr+'%';
+    document.getElementById('t-survive').textContent = ((data.tick||0)/60).toFixed(1)+'s';
+    document.getElementById('t-dodges').textContent = data.dodges||0;
+    document.getElementById('t-llm').textContent = data.llm_calls||0;
+    const p = data.player;
+    if(p) document.getElementById('t-hp').textContent = Math.round(p.hp);
+    document.getElementById('game-stats').textContent =
+      `杀敌: ${data.kills||0} | 回合: ${tankRound}`;
+  }
+
+  /* Round end — scoring */
+  if(type==='round_end'&&mod==='TankBattle'){
+    tankRound = data.round||tankRound+1;
+    showRoundResult(data);
+    scD.labels.push(`R${data.round}`);
+    scD.scores.push(data.total_score||0);
+    scD.hitRates.push((data.hit_rate||0)*100);
+    scD.llmCalls.push(data.llm_calls||0);
+    if(scD.labels.length>20){scD.labels.shift();scD.scores.shift();scD.hitRates.shift();scD.llmCalls.shift()}
+    scoreChart.update();
+  }
+  if(type==='episode_start'&&mod==='TankBattle'){
+    tankRound = data.episode||0;
+  }
+
+  if(type!=='tank_state') addLog(type,mod,data);
+}
+
+let tankRound = 0;
+
+function showRoundResult(data){
+  const el = document.getElementById('round-result');
+  const gradeColors = {S:'#ff0',A:'#0f0',B:'#5ae',C:'#f80',D:'#f33'};
+  document.getElementById('rr-grade').textContent = data.grade||'D';
+  document.getElementById('rr-grade').style.color = gradeColors[data.grade]||'#f33';
+  document.getElementById('rr-score').textContent = `${Math.round(data.total_score||0)} 分`;
+  const speedTxt = data.speed_score > 0
+    ? `<span style="color:#ff0;font-size:13px">⚡ 速杀加成 +${Math.round(data.speed_score)}</span> (${(data.survive_time||0).toFixed(1)}s)<br>`
+    : `<span style="color:#f33">未全灭 — 无速杀加成</span> (${(data.survive_time||0).toFixed(1)}s)<br>`;
+  document.getElementById('rr-details').innerHTML = speedTxt +
+    `杀敌 ${data.kills||0} (+${Math.round(data.kill_score||0)}) | ` +
+    `命中率 ${((data.hit_rate||0)*100).toFixed(0)}% (+${Math.round(data.accuracy_score||0)}) | ` +
+    `HP ${Math.round(data.player_hp||0)} (+${Math.round(data.hp_bonus||0)})<br>` +
+    `闪避 ${data.dodges||0} (+${Math.round(data.dodge_score||0)}) | ` +
+    `LLM调用 ${data.llm_calls||0} (-${Math.round(data.llm_penalty||0)})`;
+  el.style.display='block';
+  setTimeout(()=>el.style.display='none', 4000);
+}
+
+function flashScreen(){
+  const o=document.createElement('div');
+  o.style.cssText='position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,0,0,0.1);pointer-events:none;z-index:999;transition:opacity 0.5s';
+  document.body.appendChild(o);setTimeout(()=>o.style.opacity='0',80);setTimeout(()=>o.remove(),600);
+}
+
+const logBox=document.getElementById('log-entries');
+function addLog(type,mod,data){
+  const e=document.createElement('div'); e.className='le';
+  const t=new Date().toLocaleTimeString('zh-CN',{hour12:false});
+  const col=TC[type]||'#456';
+  const label=TN[type]||type;
+  const skip = new Set(['player','enemies','bullets','explosions','w','h']);
+  const msg=Object.entries(data).filter(([k])=>!skip.has(k))
+    .map(([k,v])=>`${k}=${typeof v==='number'?v.toFixed?.(2)??v:v}`).join(' ');
+  e.innerHTML=`<span class="lt">${t}</span><span class="ly" style="color:${col}">${label}</span><span class="lm">${mod}: ${msg}</span>`;
+  logBox.prepend(e);
+  while(logBox.children.length>50) logBox.lastChild.remove();
+}
+window.clearLog=()=>{logBox.innerHTML=''};
+
+window.toggleRotate=()=>{orbit.autoRotate=!orbit.autoRotate;document.getElementById('btn-rotate').classList.toggle('on',orbit.autoRotate)};
+window.togglePause=()=>{paused=!paused;const b=document.getElementById('btn-pause');b.textContent=paused?'继续':'暂停';b.classList.toggle('on',paused)};
+window.resetCerebellum=()=>{
+  if(!confirm('确定要清空小脑记忆？将从零开始重新学习。')) return;
+  fetch('/api/reset',{method:'POST'}).then(()=>{
+    stepCount=0;eventCount=0;epsCount=0;lastSecEvt=0;aimHits=0;aimEpisode=0;
+    Object.keys(modCounts).forEach(k=>modCounts[k]=0);
+    Object.keys(layerPulse).forEach(k=>layerPulse[k]=0);
+    sD.labels.length=0;sD.spe.length=0;sD.reward.length=0;chart.update();
+    scD.labels.length=0;scD.scores.length=0;scD.hitRates.length=0;scD.llmCalls.length=0;scoreChart.update();
+    document.getElementById('step-count').textContent='0';
+    document.getElementById('eps-count').textContent='0';
+    document.querySelectorAll('.lc').forEach(e=>e.textContent='0');
+    document.getElementById('game-stats').textContent='重置中...';
+    logBox.innerHTML='';
+    cursorTrail=[];tankGameState=null;tankRound=0;llmCallCount=0;
+    document.getElementById('llm-call-count').textContent='0';
+    addLog('reset','System',{message:'记忆已清空，从零开始学习'});
+  });
+};
+
+/* ── Aim Trainer Mini-View ── */
+const aimCanvas = document.getElementById('aim-canvas');
+const aimCtx = aimCanvas.getContext('2d');
+const aimW = 480, aimH = 360;
+let aimState = {cx:400,cy:300,tx:400,ty:300,tr:35,sw:800,sh:600,hit:false};
+let aimHits = 0, aimEpisode = 0;
+let hitFlash = 0;
+let cursorTrail = [];
+
+function drawAim(){
+  if(currentMode !== 'aim') return;
+  const sx = aimW/aimState.sw, sy = aimH/aimState.sh;
+  const ctx = aimCtx;
+  ctx.fillStyle = '#060e1e';
+  ctx.fillRect(0,0,aimW,aimH);
+
+  ctx.strokeStyle = 'rgba(40,80,150,0.1)';
+  ctx.lineWidth = 0.5;
+  for(let x=0;x<aimW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,aimH);ctx.stroke()}
+  for(let y=0;y<aimH;y+=30){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(aimW,y);ctx.stroke()}
+
+  const tx=aimState.tx*sx, ty=aimState.ty*sy, tr=aimState.tr*sx;
+  ctx.beginPath();ctx.arc(tx,ty,tr,0,Math.PI*2);
+  ctx.strokeStyle = hitFlash>0 ? `rgba(100,255,100,${0.3+hitFlash*0.7})` : 'rgba(255,60,60,0.5)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.beginPath();ctx.arc(tx,ty,tr*0.3,0,Math.PI*2);
+  ctx.fillStyle = hitFlash>0 ? `rgba(100,255,100,${0.4+hitFlash*0.6})` : 'rgba(255,60,60,0.3)';
+  ctx.fill();
+  ctx.strokeStyle = hitFlash>0 ? 'rgba(100,255,100,0.3)' : 'rgba(255,60,60,0.2)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath();ctx.moveTo(tx-tr*1.5,ty);ctx.lineTo(tx+tr*1.5,ty);ctx.stroke();
+  ctx.beginPath();ctx.moveTo(tx,ty-tr*1.5);ctx.lineTo(tx,ty+tr*1.5);ctx.stroke();
+
+  const cx=aimState.cx*sx, cy=aimState.cy*sy;
+  cursorTrail.push({x:cx,y:cy});
+  if(cursorTrail.length>40) cursorTrail.shift();
+  if(cursorTrail.length>1){
+    ctx.beginPath();
+    ctx.moveTo(cursorTrail[0].x, cursorTrail[0].y);
+    for(let i=1;i<cursorTrail.length;i++) ctx.lineTo(cursorTrail[i].x, cursorTrail[i].y);
+    ctx.strokeStyle = 'rgba(80,200,255,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);
+  ctx.fillStyle = hitFlash>0 ? '#6f6' : '#5af'; ctx.fill();
+  ctx.beginPath();ctx.arc(cx,cy,8,0,Math.PI*2);
+  ctx.strokeStyle = hitFlash>0 ? 'rgba(100,255,100,0.5)' : 'rgba(80,170,255,0.3)';
+  ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.beginPath();ctx.moveTo(cx,cy);ctx.lineTo(tx,ty);
+  ctx.strokeStyle='rgba(255,255,255,0.06)';ctx.lineWidth=0.5;ctx.stroke();
+
+  if(hitFlash>0){
+    ctx.fillStyle = `rgba(100,255,100,${hitFlash*0.15})`;
+    ctx.fillRect(0,0,aimW,aimH);
+    hitFlash = Math.max(0, hitFlash-0.04);
+  }
+
+  const dist = Math.sqrt(Math.pow(aimState.cx-aimState.tx,2)+Math.pow(aimState.cy-aimState.ty,2));
+  ctx.fillStyle='rgba(80,170,255,0.6)';ctx.font='9px monospace';
+  ctx.fillText(`距离: ${dist.toFixed(0)}px  半径: ${aimState.tr.toFixed(0)}px`, 8, aimH-8);
+}
+
+/* ── Tank Battle Renderer ── */
+const tankCanvas = document.getElementById('tank-canvas');
+const tankCtx = tankCanvas.getContext('2d');
+const tW = 560, tH = 420;
+
+function drawTank(){
+  if(currentMode !== 'tank' || !tankGameState) return;
+  const g = tankGameState;
+  const sx = tW/(g.w||800), sy = tH/(g.h||600);
+  const ctx = tankCtx;
+
+  ctx.fillStyle = '#060e1e';
+  ctx.fillRect(0,0,tW,tH);
+
+  ctx.strokeStyle = 'rgba(40,80,150,0.08)';
+  ctx.lineWidth = 0.5;
+  for(let x=0;x<tW;x+=40){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,tH);ctx.stroke()}
+  for(let y=0;y<tH;y+=30){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(tW,y);ctx.stroke()}
+
+  ctx.strokeStyle='rgba(255,100,80,0.15)';ctx.lineWidth=1;
+  ctx.strokeRect(2,2,tW-4,tH-4);
+
+  /* Bullets */
+  for(const b of (g.bullets||[])){
+    if(!b.alive) continue;
+    const bx=b.x*sx, by=b.y*sy;
+    ctx.beginPath();ctx.arc(bx,by,2.5,0,Math.PI*2);
+    ctx.fillStyle = b.owner==='player' ? '#5af' : '#f66';
+    ctx.fill();
+    ctx.beginPath();ctx.arc(bx,by,5,0,Math.PI*2);
+    ctx.fillStyle = b.owner==='player' ? 'rgba(80,170,255,0.15)' : 'rgba(255,80,80,0.15)';
+    ctx.fill();
+  }
+
+  /* Explosions */
+  for(const ex of (g.explosions||[])){
+    const r = (ex.r||10) * (1.2 - ex.life) * sx;
+    ctx.beginPath();ctx.arc(ex.x*sx, ex.y*sy, r, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,160,40,${(ex.life||0)*0.4})`;
+    ctx.fill();
+    ctx.beginPath();ctx.arc(ex.x*sx, ex.y*sy, r*0.5, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(255,255,200,${(ex.life||0)*0.3})`;
+    ctx.fill();
+  }
+
+  /* Enemies — color-coded by type, LLM target + cerebellum threat */
+  const llmTarget = g.llm_target ?? -1;
+  const enemies = g.enemies||[];
+  for(let ei=0; ei<enemies.length; ei++){
+    const e = enemies[ei];
+    if(!e.alive) continue;
+    const ex=e.x*sx, ey=e.y*sy;
+    const ec = e.color || '#f44';
+    const ecDark = ec.replace(/[0-9a-f]/gi, c => {
+      const v = parseInt(c, 16); return Math.max(0, v - 4).toString(16);
+    });
+    const maxHp = {Heavy:90,Sniper:30,Guerrilla:45}[e.type_en] || 50;
+    const isLLMTarget = (ei === llmTarget);
+    const isThreat = (e.threat_score||0) > 12;
+    const isHighThreat = (e.threat_score||0) > 25;
+
+    /* Cerebellum threat ring — pulsating red/orange */
+    if(isThreat){
+      const pulse = Math.sin(Date.now()/200)*4;
+      const radius = isHighThreat ? 28+pulse : 22+pulse*0.6;
+      ctx.beginPath();ctx.arc(ex,ey,radius,0,Math.PI*2);
+      ctx.strokeStyle = isHighThreat ? 'rgba(255,50,50,0.5)' : 'rgba(255,160,50,0.35)';
+      ctx.lineWidth = isHighThreat ? 2.5 : 1.5;
+      ctx.setLineDash([4,3]);ctx.stroke();ctx.setLineDash([]);
+      ctx.fillStyle = isHighThreat ? 'rgba(255,30,30,0.08)' : 'rgba(255,120,30,0.05)';
+      ctx.fill();
+    }
+
+    /* LLM target indicator — blue diamond outline */
+    if(isLLMTarget){
+      ctx.save();ctx.translate(ex,ey);
+      const dd = 26+Math.sin(Date.now()/300)*3;
+      ctx.strokeStyle='rgba(80,170,255,0.7)';ctx.lineWidth=2;
+      ctx.beginPath();
+      ctx.moveTo(0,-dd);ctx.lineTo(dd,0);ctx.lineTo(0,dd);ctx.lineTo(-dd,0);ctx.closePath();
+      ctx.stroke();
+      ctx.fillStyle='rgba(80,170,255,0.06)';ctx.fill();
+      ctx.restore();
+    }
+
+    drawTankBody(ctx, ex, ey, e.angle, e.turret, ecDark, ec, 12*sx);
+
+    /* HP bar */
+    const hpFrac = Math.max(0, e.hp/maxHp);
+    const barW = 34;
+    ctx.fillStyle='rgba(255,0,0,0.35)';ctx.fillRect(ex-barW/2,ey-24,barW,4);
+    ctx.fillStyle=hpFrac>0.5?'#0f0':hpFrac>0.25?'#ff0':'#f00';
+    ctx.fillRect(ex-barW/2,ey-24,barW*hpFrac,4);
+
+    /* Label with type */
+    ctx.fillStyle=ec;ctx.font='bold 9px sans-serif';ctx.textAlign='center';
+    ctx.fillText(`${e.label}[${e.type||'?'}]`,ex,ey-29);
+
+    /* Tag line under enemy — LLM target + cerebellum threat */
+    let tagY = ey + 22;
+    if(isLLMTarget){
+      ctx.fillStyle='rgba(80,170,255,0.85)';ctx.font='bold 8px sans-serif';
+      ctx.fillText('🎯 LLM目标',ex,tagY);
+      tagY += 11;
+    }
+    if(isThreat){
+      const tColor = isHighThreat ? '#f44' : '#fa0';
+      const tIcon = isHighThreat ? '🧠⚠' : '🧠';
+      ctx.fillStyle=tColor;ctx.font='bold 8px sans-serif';
+      ctx.fillText(`${tIcon} 小脑:${e.threat}`,ex,tagY);
+      tagY += 11;
+    }
+  }
+
+  /* Player */
+  const p = g.player;
+  if(p && p.alive){
+    const px=p.x*sx, py=p.y*sy;
+    drawTankBody(ctx, px, py, p.angle, p.turret, '#26a', '#4af', 14*sx);
+    const hpFrac = Math.max(0, p.hp/100);
+    ctx.fillStyle='rgba(0,100,255,0.3)';ctx.fillRect(px-14,py-20,28,3);
+    ctx.fillStyle=hpFrac>0.5?'#0f0':hpFrac>0.25?'#ff0':'#f00';
+    ctx.fillRect(px-14,py-20,28*hpFrac,3);
+  }
+
+  /* HUD top bar */
+  ctx.fillStyle='rgba(0,5,15,0.6)';ctx.fillRect(0,0,tW,18);
+  ctx.fillStyle='rgba(80,170,255,0.85)';ctx.font='bold 10px monospace';ctx.textAlign='left';
+  ctx.fillText(`击杀: ${g.kills||0}  回合: ${tankRound}`, 8, 13);
+  ctx.textAlign='right';
+  const sf=g.shots_fired||0,sh=g.shots_hit||0;
+  ctx.fillText(`命中: ${sf>0?(sh/sf*100).toFixed(0):'0'}%  LLM: ${g.llm_calls||0}`, tW-8, 13);
+
+  /* Bottom legend bar */
+  ctx.fillStyle='rgba(0,5,15,0.6)';ctx.fillRect(0,tH-22,tW,22);
+  ctx.font='9px sans-serif';ctx.textAlign='left';
+  let lx = 8;
+  ctx.strokeStyle='rgba(80,170,255,0.7)';ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(lx,tH-13);ctx.lineTo(lx+6,tH-10);ctx.lineTo(lx+12,tH-13);ctx.lineTo(lx+6,tH-16);ctx.closePath();ctx.stroke();
+  lx+=16;ctx.fillStyle='#5ae';ctx.fillText('= LLM目标',lx,tH-9);
+  lx+=62;
+  ctx.beginPath();ctx.arc(lx+6,tH-12,6,0,Math.PI*2);ctx.strokeStyle='rgba(255,50,50,0.6)';ctx.setLineDash([3,2]);ctx.stroke();ctx.setLineDash([]);
+  lx+=16;ctx.fillStyle='#f66';ctx.fillText('= 小脑高危',lx,tH-9);
+  lx+=62;
+  ctx.beginPath();ctx.arc(lx+6,tH-12,6,0,Math.PI*2);ctx.strokeStyle='rgba(255,160,50,0.5)';ctx.setLineDash([3,2]);ctx.stroke();ctx.setLineDash([]);
+  lx+=16;ctx.fillStyle='#fa0';ctx.fillText('= 小脑中危',lx,tH-9);
+  lx+=62;
+  ctx.fillStyle='#4af';ctx.fillRect(lx,tH-15,10,6);lx+=14;ctx.fillStyle='#5ae';ctx.fillText('= 我方',lx,tH-9);
+}
+
+function drawTankBody(ctx, x, y, bodyAngle, turretAngle, bodyColor, turretColor, size){
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(bodyAngle||0);
+  ctx.fillStyle = bodyColor;
+  ctx.fillRect(-size*0.7, -size*0.5, size*1.4, size);
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)'; ctx.lineWidth=0.5;
+  ctx.strokeRect(-size*0.7, -size*0.5, size*1.4, size);
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(turretAngle||0);
+  ctx.fillStyle = turretColor;
+  ctx.fillRect(0, -1.5, size*1.2, 3);
+  ctx.beginPath();ctx.arc(0,0,size*0.35,0,Math.PI*2);
+  ctx.fillStyle = turretColor; ctx.fill();
+  ctx.restore();
+}
+
+setInterval(()=>{ drawAim(); drawTank(); }, 33);
+
+/* ── Animation ── */
+const clock = new THREE.Clock();
+let lastEps=0;
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt=clock.getDelta(), t=clock.getElapsedTime();
+  orbit.update();
+
+  ['purkinje','granule','nuclei'].forEach(name=>{
+    const la=L[name]; if(!la) return;
+    la.mat.uniforms.uT.value=t;
+    const p=layerPulse[name]||0;
+    const cur=la.mat.uniforms.uB.value;
+    la.mat.uniforms.uB.value = cur + (0.35-cur)*dt*2;
+    if(p>0){ la.mat.uniforms.uB.value = Math.max(la.mat.uniforms.uB.value, 0.35+p*0.25); layerPulse[name]=Math.max(0,p-dt*2.5); }
+  });
+
+  const mp=layerPulse.mossy||0;
+  mossyMats.forEach(m=>m.opacity=0.04+mp*0.08);
+  if(mp>0) layerPulse.mossy=Math.max(0,mp-dt*2.5);
+
+  connMats.forEach(c=>{
+    const lp=layerPulse[c.layer]||0;
+    c.mat.opacity = c.mat.opacity*0.95 + (0.03+lp*0.06)*0.05;
+  });
+
+  neurons.forEach(n=>{
+    const lp = n.layer ? (layerPulse[n.layer]||0) : 0;
+    const brightness = 0.6 + 0.4*Math.sin(t*2+n.mesh.position.x*3) + lp*0.3;
+    n.mat.opacity = Math.min(1, brightness);
+    n.haloMat.opacity = 0.1 + lp*0.1 + 0.05*Math.sin(t*1.5+n.mesh.position.z*2);
+    const scale = 1 + 0.15*Math.sin(t*2.5+n.mesh.position.y*4) + lp*0.2;
+    n.halo.scale.setScalar(scale);
+  });
+
+  /* Cortex flash — whole brain white pulse on LLM call */
+  if(cortexFlash > 0){
+    const cf = cortexFlash * 0.15;
+    shellMat.opacity = 0.06 + cf;
+    shellMat.color.setRGB(0.1+cf*3, 0.19+cf*3, 0.38+cf*3);
+    bloom.strength = 2.0 + cortexFlash * 0.8;
+    cortexFlash = Math.max(0, cortexFlash - dt * 3);
+  } else {
+    shellMat.opacity = 0.06;
+    shellMat.color.setHex(0x1a3060);
+    bloom.strength = 2.0;
+  }
+  if(layerPulse.cortex > 0) layerPulse.cortex = Math.max(0, layerPulse.cortex - dt*2);
+
+  lightning = lightning.filter(l=>{
+    l.life-=dt*2; l.mesh.material.opacity=Math.max(0,l.life);
+    if(l.life<=0){G.remove(l.mesh);return false} return true;
+  });
+
+  core.scale.setScalar(1+0.12*Math.sin(t*2));
+  const tp=Object.values(layerPulse).reduce((a,b)=>a+b,0);
+  coreMat.opacity=0.12+tp*0.03;
+  cLight.intensity=1.5+tp*0.4;
+
+  if(t-lastEps>1){epsCount=eventCount-lastSecEvt;lastSecEvt=eventCount;lastEps=t;
+    document.getElementById('eps-count').textContent=epsCount}
+
+  composer.render();
+}
+animate();
+
+window.addEventListener('resize',()=>{
+  const w=box.clientWidth,h=box.clientHeight;
+  camera.aspect=w/h;camera.updateProjectionMatrix();
+  renderer.setSize(w,h);composer.setSize(w,h);
+});
+</script>
+</body>
+</html>

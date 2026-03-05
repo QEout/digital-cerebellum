@@ -9,13 +9,30 @@
   - `SKILL.md` (unified cerebellum narrative for marketplace listing)
   - `run.sh` entry point (auto-creates venv, launches MCP server)
   - `examples/clawhub_demo.py` — end-to-end demo: learn → accelerate → catch cascade
+- **Phase 8b — GUI Control Learning**: cerebellar motor learning for continuous GUI control.
+  - `ScreenStateEncoder`: screenshot → state vector (ROI / downsample / hybrid strategies)
+  - `GUIActionSpace`: continuous vector ↔ mouse/keyboard commands (encode/decode)
+  - `AimTrainerEnv`: simulated aim trainer implementing Environment protocol
+  - `GUIController`: cortex (crude direction) + cerebellum (climbing-fibre correction)
+  - Demo: hits/episode 11→24 (2.2x improvement), target 35→18px (adaptive difficulty),
+    0.9ms/action (1094 Hz), zero LLM calls — pure cerebellar motor learning
+  - 21 new tests for all GUI control components
+- **3D Real-Time Visualization Dashboard**: browser-based Three.js cerebellum visualization.
+  - `EventBus` (`digital_cerebellum/viz/event_bus.py`): lightweight pub/sub, zero overhead when idle
+  - `FastAPI WebSocket Server` (`digital_cerebellum/viz/server.py`): `/ws` event stream, `/` static HTML
+  - `Three.js 3D Frontend` (`digital_cerebellum/viz/static/index.html`): particle system brain model,
+    Unreal Bloom post-processing, OrbitControls, climbing-fiber lightning effects
+  - Live SPE/reward charts (Chart.js), module activity counters, color-coded activity log
+  - `examples/viz_demo.py`: one-command demo — starts server, opens browser, runs aim trainer
+  - Instrumented `DigitalCerebellum.evaluate()`, `StepMonitor`, `GUIController` with emit() calls
+  - 11 new viz tests, `[viz]` optional dependency group (`fastapi`, `uvicorn`, `websockets`)
 
 ### Changed
 - **Narrative correction**: marketing no longer lists "StepMonitor + SkillStore + Fluid Memory"
   as separate products. The cerebellum is one organ; all 22 tools are the API surface of
   that organ, not 22 separate features.
 - Updated README.md with ClawHub install section and unified tool table.
-- Updated `docs/vision.md` Phase 8a description to reflect unified positioning.
+- Updated `docs/vision.md` Phase 8a and 8b marked complete.
 
 ## 0.6.0 — 2026-03-04
 

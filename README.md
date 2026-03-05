@@ -370,6 +370,78 @@ No LLM. No text. Pure cerebellar computation at millisecond precision.
 | `ActionEncoder` | Efference copy encoding | Continuous action space normalisation |
 | `MicroOpEngine` | Cerebellar continuous loop | observe → predict → act → learn at 285Hz |
 
+## GUI Control Learning (Phase 8b)
+
+The cerebellum's primary function in biology is **motor control** — not cognition. Phase 8b proves this: the cerebellum learns to aim at targets through prediction errors alone, with no LLM involved.
+
+```
+  Motor cortex: "move roughly toward target" (noisy)
+       │
+       ▼
+  Cerebellum: forward model predicts next state
+       │         climbing fibre computes correction error
+       │         correction network refines motor signal
+       ▼
+  Final action: precise movement + click timing
+```
+
+```python
+from digital_cerebellum.micro_ops import GUIController, GUIControlConfig
+from digital_cerebellum.micro_ops.aim_trainer import AimTrainerEnv
+
+env = AimTrainerEnv()
+ctrl = GUIController(env.state_dim, env.action_dim)
+
+for episode in range(25):
+    env.reset()
+    result = ctrl.run_episode(env, n_steps=500)
+    print(f"Ep {episode}: {env.stats['hits']} hits, SPE={result['mean_spe']:.4f}")
+```
+
+| Metric | Episode 1-3 | Episode 23-25 | Change |
+|--------|------------|--------------|--------|
+| Hits/episode | 11 | 24 | **2.2x** |
+| Target radius | 35px | 18px | Difficulty 2x |
+| SPE | 0.136 | 0.112 | -18% |
+| Latency | 0.9ms | 0.9ms | 1094 Hz |
+| LLM calls | 0 | 0 | Pure cerebellum |
+
+Run: `python examples/gui_control_demo.py --episodes 25 --steps 500`
+
+### With OpenClaw's real GUI tools
+
+OpenClaw has eyes (`screenshot`) and hands (`mouse_move`, `left_click`, `type`). The cerebellum connects them into a learning loop:
+
+```python
+from openclaw_sdk import OpenClawClient
+from digital_cerebellum.micro_ops.openclaw_env import run_openclaw_cerebellum
+
+async with OpenClawClient.connect() as client:
+    results = await run_openclaw_cerebellum(client, "my-agent", episodes=20)
+```
+
+`screenshot → ScreenStateEncoder → GUIController → GUIActionSpace → mouse_move/left_click`
+— one pipeline, cerebellar computation adds <1ms overhead to each screenshot round-trip.
+
+## 3D Real-Time Visualization
+
+Watch the cerebellum think — a browser-based 3D dashboard that renders neural activity in real-time while the aim trainer runs.
+
+```bash
+pip install digital-cerebellum[viz]
+python examples/viz_demo.py
+```
+
+Opens `http://localhost:8765` with:
+- **3D particle brain** — each module is a cluster (Purkinje, granule cells, deep nuclei, etc.) that pulses on activation
+- **Bloom post-processing** — climbing fiber errors flash as red lightning
+- **Live SPE/reward chart** — prediction error and reward over time (Chart.js)
+- **Module activity counters** — see which components fire most
+- **Activity log** — last 50 events with color coding
+- **OrbitControls** — drag to rotate, scroll to zoom
+
+Architecture: `EventBus` (pub/sub) → `FastAPI WebSocket` → `Three.js + Chart.js` frontend. Zero overhead when no browser is connected.
+
 ## Benchmark results
 
 ### Reliability benchmark (7 scenarios, with vs without cerebellum)
@@ -528,7 +600,9 @@ Run benchmarks: `python -m benchmarks.run_all --phase3`
 - [x] **SkillStore Persistence**: Skills survive restarts — JSON+numpy save/load, auto-integrated with MCP server
 - [x] **Full Cerebellum API**: All 5 biological capabilities exposed via 22 MCP tools — one organ, not a toolkit
 - [x] **ClawHub Skill**: `openclaw skills install digital-cerebellum` — one command, zero config, transparent sidecar
-- [x] 275 unit tests passing (+ 26 LLM-dependent deselected in CI)
+- [x] **Phase 8b — GUI Control**: ScreenStateEncoder, GUIActionSpace, AimTrainerEnv, GUIController — 2.2x throughput, 1094 Hz, zero LLM calls
+- [x] **3D Visualization**: Real-time WebSocket dashboard — Three.js particle brain, bloom post-processing, live SPE/reward charts, EventBus instrumentation
+- [x] 296 unit tests passing (+ 26 LLM-dependent deselected in CI)
 - [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
 
 ## Docs

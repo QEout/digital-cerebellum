@@ -240,6 +240,11 @@ class StepMonitor:
             self._step_count, confidence, risk_score, should_proceed,
         )
 
+        from digital_cerebellum.viz.event_bus import event_bus as _eb
+        _eb.emit("step", "StepMonitor", phase="before",
+                 step=self._step_count, confidence=float(confidence),
+                 risk=float(risk_score), proceed=should_proceed)
+
         return StepPrediction(
             predicted_outcome=predicted_outcome,
             confidence=confidence,
@@ -369,6 +374,15 @@ class StepMonitor:
                 "failed_steps": rollback_plan.failed_steps,
                 "recommendation": rollback_plan.recommendation,
             }
+
+        from digital_cerebellum.viz.event_bus import event_bus as _eb
+        _eb.emit("error", "ErrorComparator", spe=float(spe), step=self._step_count)
+        if should_pause:
+            _eb.emit("cascade", "ErrorCascadeDetector",
+                     risk=float(cascade_status.risk), step=self._step_count)
+        _eb.emit("step", "StepMonitor", phase="after",
+                 step=self._step_count, spe=float(spe),
+                 cascade_risk=float(cascade_status.risk), pause=should_pause)
 
         return StepVerdict(
             spe=spe,

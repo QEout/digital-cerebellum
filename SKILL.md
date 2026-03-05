@@ -111,10 +111,42 @@ While the cerebellum works automatically, power users can call any of the 22 too
 
 But the whole point of a cerebellum is that you shouldn't have to think about it. Install it and let it work.
 
+## Real-Time GUI Control (with OpenClaw's computer-use)
+
+OpenClaw has eyes (`screenshot`) and hands (`mouse_move`, `left_click`, `type`).
+Digital Cerebellum is the brain that connects them into a learning loop.
+
+```python
+from openclaw_sdk import OpenClawClient
+from digital_cerebellum.micro_ops.openclaw_env import run_openclaw_cerebellum
+
+async with OpenClawClient.connect() as client:
+    # The cerebellum drives OpenClaw's GUI tools directly:
+    #   screenshot → ScreenStateEncoder → state vector
+    #   GUIController computes action (cortex + cerebellar correction)
+    #   GUIActionSpace decodes → mouse_move / left_click / type
+    #   Forward model learns from prediction errors
+    results = await run_openclaw_cerebellum(
+        client,
+        agent_id="my-agent",
+        episodes=20,
+        steps_per_episode=100,
+    )
+```
+
+Over episodes, the cerebellum learns:
+- **Motor mapping**: which action vectors produce which cursor movements
+- **Targeting**: how to move toward UI elements efficiently
+- **Timing**: when to click, drag, or wait
+- **Error patterns**: what sequences lead to failures
+
+This runs at the speed of OpenClaw's screenshot round-trip (~50-200ms). The cerebellar computation itself adds <1ms overhead.
+
 ## Requirements
 
 - Python 3.10+
 - No API key required for core functionality (pure local inference)
+- Optional: `pip install openclaw-sdk` for real GUI control integration
 - Optional: LLM API key for slow-path evaluation on novel inputs
 
 ## Links
