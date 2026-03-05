@@ -1,0 +1,78 @@
+{
+  "ablation": [
+    {
+      "config": "baseline",
+      "tasks": 812,
+      "passed": 812,
+      "pass_rate": 1.0,
+      "avg_steps": 3.03,
+      "avg_llm_calls": 3.03,
+      "total_skill_hits": 0,
+      "total_cascades": 0,
+      "total_time_s": 9.2,
+      "error_rate": 0.0
+    },
+    {
+      "config": "full",
+      "tasks": 812,
+      "passed": 812,
+      "pass_rate": 1.0,
+      "avg_steps": 2.97,
+      "avg_llm_calls": 2.97,
+      "total_skill_hits": 841,
+      "total_cascades": 414,
+      "total_time_s": 10.7,
+      "error_rate": 0.0
+    },
+    {
+      "config": "no_memory",
+      "tasks": 812,
+      "passed": 812,
+      "pass_rate": 1.0,
+      "avg_steps": 2.95,
+      "avg_llm_calls": 2.95,
+      "total_skill_hits": 861,
+      "total_cascades": 409,
+      "total_time_s": 8.6,
+      "error_rate": 0.0
+    },
+    {
+      "config": "no_monitor",
+      "tasks": 812,
+      "passed": 812,
+      "pass_rate": 1.0,
+      "avg_steps": 2.98,
+      "avg_llm_calls": 2.98,
+      "total_skill_hits": 812,
+      "total_cascades": 0,
+      "total_time_s": 8.7,
+      "error_rate": 0.0
+    },
+    {
+      "config": "no_skill",
+      "tasks": 812,
+      "passed": 812,
+      "pass_rate": 1.0,
+      "avg_steps": 3.0,
+      "avg_llm_calls": 3.0,
+      "total_skill_hits": 0,
+      "total_cascades": 391,
+      "total_time_s": 8.6,
+      "error_rate": 0.0
+    }
+  ],
+  "cascade": {
+    "baseline_errors": 0,
+    "cascades_caught": 414,
+    "cascades_that_prevented_errors": 0,
+    "catch_rate": 0.0
+  },
+  "skill": {
+    "total_steps": 2409,
+    "skill_hits": 841,
+    "skill_hit_rate": 0.3491,
+    "llm_calls_cerebellum": 2409,
+    "llm_calls_baseline": 2461,
+    "llm_savings": 0.0211
+  }
+}

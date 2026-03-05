@@ -1,0 +1,10 @@
+# Extra dependencies for WebArena benchmark (Phase 8c)
+# Install: pip install -r requirements-benchmark.txt
+
+playwright>=1.40.0
+webarena-verified>=1.0.0
+openai>=1.0.0
+pyyaml>=6.0
+
+# Optional: for AWS deployment
+# boto3>=1.34.0
