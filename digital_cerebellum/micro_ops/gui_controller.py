@@ -88,8 +88,11 @@ class CorrectionMicrozone:
     its own climbing fiber input (error signal), and learns independently.
     Multiple microzones operate in parallel on the same mossy fiber input
     (state) and their outputs are summed at the deep cerebellar nuclei.
+
+    Output is bounded via tanh (biological: Purkinje cell firing rate
+    saturation) to prevent correction explosion during early training.
     """
-    __slots__ = ('name', 'net', 'optimizer', 'scale')
+    __slots__ = ('name', 'net', 'optimizer', 'scale', 'enabled')
 
     def __init__(
         self,
@@ -99,20 +102,25 @@ class CorrectionMicrozone:
         hidden_dim: int = 64,
         lr: float = 0.01,
         scale: float = 0.5,
+        enabled: bool = True,
     ):
         self.name = name
         self.scale = scale
+        self.enabled = enabled
         self.net = torch.nn.Sequential(
             torch.nn.Linear(state_dim, hidden_dim),
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim, hidden_dim),
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim, action_dim),
+            torch.nn.Tanh(),
         )
         with torch.no_grad():
-            self.net[-1].weight.mul_(0.01)
-            self.net[-1].bias.zero_()
-        self.optimizer = torch.optim.Adam(self.net.parameters(), lr=lr)
+            self.net[-2].weight.mul_(0.01)
+            self.net[-2].bias.zero_()
+        self.optimizer = torch.optim.Adam(
+            self.net.parameters(), lr=lr, weight_decay=1e-4,
+        )
 
 
 class GUIController:
@@ -201,14 +209,15 @@ class GUIController:
         return np.clip(action, -1.0, 1.0)
 
     def cerebellar_correction(self, state: np.ndarray) -> np.ndarray:
-        """Sum corrections from all microzones (deep cerebellar nuclei)."""
+        """Sum corrections from all enabled microzones (deep cerebellar nuclei)."""
         if not self.cerebellum_enabled:
             return np.zeros(self.action_dim, dtype=np.float32)
         with torch.no_grad():
             s = torch.from_numpy(state).float().unsqueeze(0)
             total = torch.zeros(1, self.action_dim)
             for mz in self._microzones:
-                total += mz.net(s) * mz.scale
+                if mz.enabled:
+                    total += mz.net(s) * mz.scale
             return total.squeeze(0).numpy()
 
     def step(self, env: Environment) -> TrialResult:
@@ -348,11 +357,15 @@ class GUIController:
         modulation = 1.0 + min(spe_scalar, 3.0)
 
         for mz in self._microzones:
+            if not mz.enabled:
+                continue
+
             correction = mz.net(s_t) * mz.scale
 
             other_corr = sum(
                 (omz.net(s_t) * omz.scale).detach()
-                for omz in self._microzones if omz is not mz
+                for omz in self._microzones
+                if omz is not mz and omz.enabled
             )
             if not isinstance(other_corr, torch.Tensor):
                 other_corr = torch.zeros_like(correction)
@@ -368,7 +381,7 @@ class GUIController:
 
             future_error = errors[mz.name]
             error_loss = future_error.pow(2).sum()
-            reg = correction.pow(2).mean() * 0.005
+            reg = correction.pow(2).mean() * 0.02
             loss = (error_loss + reg) * modulation
 
             mz.optimizer.zero_grad()
@@ -448,6 +461,31 @@ class GUIController:
         multiplier = 1.0 + conf * 4.0
         return int(base_interval * multiplier)
 
+    def modulate_microzone(
+        self,
+        name: str,
+        gain: float | None = None,
+        lr: float | None = None,
+        enabled: bool | None = None,
+    ) -> None:
+        """Cortex-driven gain modulation (cortico-rubro-olivary pathway).
+
+        Allows the cortex (LLM) to adjust microzone priorities in real-time.
+        Biology: motor cortex -> red nucleus -> inferior olive -> climbing
+        fiber gain.  Higher gain = stronger error signal = faster learning
+        + larger correction for that sub-objective.
+        """
+        for mz in self._microzones:
+            if mz.name == name:
+                if gain is not None:
+                    mz.scale = gain
+                if lr is not None:
+                    for pg in mz.optimizer.param_groups:
+                        pg['lr'] = lr
+                if enabled is not None:
+                    mz.enabled = enabled
+                return
+
     @property
     def microzone_names(self) -> list[str]:
         return [mz.name for mz in self._microzones]
@@ -461,6 +499,7 @@ class GUIController:
             s = torch.from_numpy(state).float().unsqueeze(0)
             return {
                 mz.name: (mz.net(s).squeeze(0) * mz.scale).numpy()
+                if mz.enabled else np.zeros(self.action_dim, dtype=np.float32)
                 for mz in self._microzones
             }
 

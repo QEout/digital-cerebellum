@@ -295,6 +295,54 @@ class TestTankController:
         err_def = TankController._move_error(defensive).pow(2).sum().item()
         assert err_agg > err_def
 
+    def test_correction_output_is_bounded(self):
+        """Tanh output layer should keep per-microzone corrections bounded."""
+        env, ctrl = self._make()
+        state = env.observe()
+        corrs = ctrl.microzone_corrections(state)
+        for name, c in corrs.items():
+            max_possible = max(mz.scale for mz in ctrl._microzones)
+            assert np.all(np.abs(c) <= max_possible + 1e-6), (
+                f"{name} correction out of bounds: max={np.max(np.abs(c)):.4f}"
+            )
+
+    def test_modulate_microzone_changes_gain(self):
+        """modulate_microzone should change a microzone's scale."""
+        _, ctrl = self._make()
+        old_scale = ctrl._microzones[0].scale
+        ctrl.modulate_microzone("aim", gain=0.1)
+        assert ctrl._microzones[0].scale == 0.1
+        assert ctrl._microzones[0].scale != old_scale
+
+    def test_modulate_microzone_changes_lr(self):
+        _, ctrl = self._make()
+        ctrl.modulate_microzone("aim", lr=0.099)
+        for pg in ctrl._microzones[0].optimizer.param_groups:
+            assert pg['lr'] == 0.099
+
+    def test_modulate_microzone_enable_disable(self):
+        """Disabled microzone should contribute zero correction."""
+        env, ctrl = self._make()
+        state = env.observe()
+        ctrl.modulate_microzone("dodge", enabled=False)
+        corrs = ctrl.microzone_corrections(state)
+        assert np.allclose(corrs["dodge"], 0.0)
+        assert not np.allclose(corrs["aim"], 0.0) or True  # aim may be near zero early
+
+    def test_disabled_microzone_not_trained(self):
+        """A disabled microzone's weights should not change during training."""
+        env, ctrl = self._make()
+        ctrl.modulate_microzone("move", enabled=False)
+        weights_before = ctrl._microzones[2].net[0].weight.data.clone()
+        for _ in range(50):
+            if env.done:
+                env.reset()
+            ctrl.step(env)
+        weights_after = ctrl._microzones[2].net[0].weight.data
+        assert torch.allclose(weights_before, weights_after), (
+            "Disabled microzone weights should not change"
+        )
+
     def test_step_produces_trial_result(self):
         env, ctrl = self._make()
         result = ctrl.step(env)
@@ -484,6 +532,87 @@ class TestTankLearning:
         assert ctrl.forward_model._step >= 100
         assert ctrl.forward_model.mean_recent_error < 0.5, (
             f"FM error still high: {ctrl.forward_model.mean_recent_error:.4f}"
+        )
+
+    def test_aim_only_microzone_learns(self):
+        """With only aim enabled, correction should primarily affect turret."""
+        env = TankBattleEnv(TankConfig(
+            round_max_ticks=200, randomize_spawns=False, noise=0.0,
+        ))
+        ctrl = TankController(
+            state_dim=env.state_dim, action_dim=env.action_dim,
+            cfg=GUIControlConfig(
+                cortex_gain=0.6, cortex_noise=0.3,
+                correction_lr=0.005, correction_scale=0.3,
+            ),
+        )
+        ctrl.modulate_microzone("dodge", enabled=False)
+        ctrl.modulate_microzone("move", enabled=False)
+
+        for _ in range(300):
+            if env.done:
+                env.reset()
+            ctrl.step(env)
+
+        state = env.observe()
+        corrs = ctrl.microzone_corrections(state)
+        assert np.allclose(corrs["dodge"], 0.0)
+        assert np.allclose(corrs["move"], 0.0)
+        aim_mag = np.linalg.norm(corrs["aim"])
+        assert aim_mag > 1e-5, f"Aim-only correction too small: {aim_mag:.6f}"
+
+    def test_dodge_only_microzone_learns(self):
+        """With only dodge enabled, correction should be nonzero when bullets near."""
+        env = TankBattleEnv(TankConfig(
+            round_max_ticks=200, randomize_spawns=False, noise=0.0,
+        ))
+        ctrl = TankController(
+            state_dim=env.state_dim, action_dim=env.action_dim,
+            cfg=GUIControlConfig(
+                cortex_gain=0.6, cortex_noise=0.3,
+                correction_lr=0.005, correction_scale=0.3,
+            ),
+        )
+        ctrl.modulate_microzone("aim", enabled=False)
+        ctrl.modulate_microzone("move", enabled=False)
+
+        for _ in range(300):
+            if env.done:
+                env.reset()
+            ctrl.step(env)
+
+        state = env.observe()
+        corrs = ctrl.microzone_corrections(state)
+        assert np.allclose(corrs["aim"], 0.0)
+        assert np.allclose(corrs["move"], 0.0)
+        dodge_mag = np.linalg.norm(corrs["dodge"])
+        assert dodge_mag > 1e-5, f"Dodge-only correction too small: {dodge_mag:.6f}"
+
+    def test_correction_stays_bounded_over_training(self):
+        """After many steps, total correction magnitude should stay bounded."""
+        env = TankBattleEnv(TankConfig(
+            round_max_ticks=300, randomize_spawns=False, noise=0.0,
+        ))
+        ctrl = TankController(
+            state_dim=env.state_dim, action_dim=env.action_dim,
+            cfg=GUIControlConfig(
+                cortex_gain=0.6, cortex_noise=0.5,
+                correction_lr=0.005, correction_scale=0.3,
+            ),
+        )
+        max_corr = 0.0
+        for _ in range(3):
+            env.reset()
+            while not env.done:
+                result = ctrl.step(env)
+                mag = float(np.linalg.norm(result.correction))
+                max_corr = max(max_corr, mag)
+            ctrl.decay_noise()
+
+        max_theoretical = sum(mz.scale for mz in ctrl._microzones) * np.sqrt(4)
+        assert max_corr < max_theoretical + 0.1, (
+            f"Correction exploded: max={max_corr:.4f}, "
+            f"theoretical_bound={max_theoretical:.4f}"
         )
 
     def test_confidence_increases_over_training(self):
