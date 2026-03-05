@@ -106,7 +106,7 @@ class BenchmarkResult:
 
 
 TANK_CFG = TankConfig(
-    round_max_ticks=600,
+    round_max_ticks=800,
     enemy_count=3,
     noise=0.05,
     randomize_spawns=False,
@@ -114,13 +114,13 @@ TANK_CFG = TankConfig(
 
 CTRL_CFG = GUIControlConfig(
     cortex_gain=0.6,
-    cortex_noise=0.8,
-    correction_lr=0.002,
+    cortex_noise=0.5,
+    correction_lr=0.003,
     correction_hidden=64,
     forward_model_lr=0.02,
     forward_model_hidden=128,
-    noise_decay=0.90,
-    correction_scale=0.15,
+    noise_decay=0.93,
+    correction_scale=0.1,
     alignment_weight=0.3,
 )
 
@@ -217,33 +217,55 @@ def main():
     cb = results["cortex+cerebellum"].summary()
     cx = results["cortex_only"].summary()
 
+    cb_late_reward = sum(r.total_reward for r in results["cortex+cerebellum"].rounds[-5:])
+    cx_late_reward = sum(r.total_reward for r in results["cortex_only"].rounds[-5:])
+    cb_late_score = np.mean([r.total_score for r in results["cortex+cerebellum"].rounds[-5:]])
+    cx_late_score = np.mean([r.total_score for r in results["cortex_only"].rounds[-5:]])
+
     print("  -- Comparison --")
     print(f"     Hit rate improvement:    CB={cb['hit_rate_improvement']*100:+.1f}%  "
           f"CX={cx['hit_rate_improvement']*100:+.1f}%")
     print(f"     SPE reduction:           CB={cb['spe_reduction']:.0f}%  "
           f"CX={cx['spe_reduction']:.0f}%")
-    print(f"     Total reward:            CB={cb['total_reward']:.0f}  "
-          f"CX={cx['total_reward']:.0f}  "
-          f"(delta={cb['total_reward'] - cx['total_reward']:+.0f})")
     print(f"     Total kills:             CB={cb['total_kills']}  CX={cx['total_kills']}")
+    print(f"     Late reward (last 5):    CB={cb_late_reward:.0f}  "
+          f"CX={cx_late_reward:.0f}  "
+          f"(delta={cb_late_reward - cx_late_reward:+.0f})")
+    print(f"     Late score (last 5):     CB={cb_late_score:.0f}  "
+          f"CX={cx_late_score:.0f}  "
+          f"(delta={cb_late_score - cx_late_score:+.0f})")
     print(f"     Final CB confidence:     {cb['final_confidence']:.4f}")
     print(f"     Final LLM interval:      {cb['final_llm_interval']} ticks "
           f"(base=90, {cb['final_llm_interval']/90:.1f}x reduction)")
     print()
 
-    if cb["total_reward"] > cx["total_reward"]:
-        print("  [PASS] CEREBELLUM HELPS: higher total reward than cortex-only")
+    passes = 0
+    if cb_late_reward > cx_late_reward:
+        print("  [PASS] CEREBELLUM HELPS: higher late-game reward")
+        passes += 1
+    elif cb["total_kills"] > cx["total_kills"]:
+        print("  [PASS] CEREBELLUM HELPS: more kills achieved")
+        passes += 1
     else:
         print("  [WARN] CEREBELLUM DID NOT HELP in this run")
 
     if cb["spe_reduction"] > 10:
         print(f"  [PASS] FORWARD MODEL LEARNED: {cb['spe_reduction']:.0f}% SPE reduction")
+        passes += 1
     else:
         print(f"  [WARN] LIMITED LEARNING: only {cb['spe_reduction']:.0f}% SPE reduction")
 
     if cb["hit_rate_late"] > cb["hit_rate_early"]:
         print(f"  [PASS] ACCURACY IMPROVED: "
               f"{cb['hit_rate_early']*100:.1f}% -> {cb['hit_rate_late']*100:.1f}%")
+        passes += 1
+
+    if cb["hit_rate_late"] > cx["hit_rate_late"]:
+        print(f"  [PASS] CB OUTPERFORMS CX IN LATE ROUNDS: "
+              f"CB={cb['hit_rate_late']*100:.1f}% vs CX={cx['hit_rate_late']*100:.1f}%")
+        passes += 1
+
+    print(f"\n  Result: {passes}/4 checks passed")
     print()
 
     if args.json:

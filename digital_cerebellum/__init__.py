@@ -35,11 +35,14 @@ from digital_cerebellum.brain import DigitalBrain
 from digital_cerebellum.monitor import StepMonitor
 from digital_cerebellum.emergence import SomaticMarker, CuriosityDrive, SelfModel
 from digital_cerebellum.micro_ops import MicroOpEngine, MicroOpConfig
+from digital_cerebellum.memory.habit_observer import HabitObserver
+from digital_cerebellum.rhythm.engine import RhythmEngine
 
 __all__ = [
     "DigitalCerebellum", "CerebellumConfig", "DigitalBrain",
     "StepMonitor",
     "SomaticMarker", "CuriosityDrive", "SelfModel",
     "MicroOpEngine", "MicroOpConfig",
+    "HabitObserver", "RhythmEngine",
 ]
-__version__ = "0.6.1"
+__version__ = "0.7.0"

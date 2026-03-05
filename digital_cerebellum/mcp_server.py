@@ -811,6 +811,91 @@ def get_exploration_suggestions() -> list[dict[str, Any]]:
 
 
 # ======================================================================
+# Habit Learning & Rhythm (predictive awakening)
+# ======================================================================
+
+@mcp.tool()
+def get_habit_patterns() -> dict[str, Any]:
+    """
+    Extract and return learned behaviour patterns from past interactions.
+
+    The cerebellum observes every action the agent takes (timestamps,
+    domains, success/failure) and extracts temporal patterns:
+
+    - **Daily rhythms**: "user checks email at ~09:00 on weekdays"
+    - **Sequential patterns**: "after email, user opens Slack within 10min"
+    - **Frequency patterns**: "user deploys code ~2x per week"
+
+    Call this during sleep cycles or when you want to understand user habits.
+
+    Returns:
+        Dict with 'patterns' (list of extracted patterns) and 'stats'.
+    """
+    monitor = _get_monitor()
+    patterns = monitor.habit_observer.extract_patterns()
+    return _sanitize({
+        "patterns": [
+            {
+                "id": p.id,
+                "action": p.action_pattern,
+                "domain": p.domain,
+                "type": p.pattern_type,
+                "hour": round(p.hour_mean, 1) if p.pattern_type == "daily" else None,
+                "hour_std": round(p.hour_std, 1) if p.pattern_type == "daily" else None,
+                "weekdays": p.weekdays if p.pattern_type == "daily" else None,
+                "predecessor": p.predecessor if p.pattern_type == "sequential" else None,
+                "delay_seconds": round(p.delay_mean_seconds, 0) if p.pattern_type == "sequential" else None,
+                "confidence": round(p.confidence, 3),
+                "observations": p.sample_count,
+            }
+            for p in patterns
+        ],
+        "stats": monitor.habit_observer.stats,
+    })
+
+
+@mcp.tool()
+def get_proactive_suggestions() -> list[dict[str, Any]]:
+    """
+    Get proactive suggestions based on learned user habits and current time.
+
+    Instead of waiting for the user to ask, the cerebellum predicts what
+    the user is likely to do next based on temporal patterns:
+
+    - "You usually check email around now (09:00 ± 10min, 8 observations)"
+    - "After checking email, you typically open Slack within 12 minutes"
+
+    This is the RHYTHM system — event-driven + predictive, not polling.
+
+    Returns:
+        List of suggestions with action, confidence, reason, and hint.
+        Empty if no strong predictions match the current time.
+    """
+    monitor = _get_monitor()
+    from digital_cerebellum.rhythm.engine import RhythmEngine
+    rhythm = RhythmEngine(monitor.habit_observer)
+    return _sanitize(rhythm.get_proactive_suggestions())
+
+
+@mcp.tool()
+def get_rhythm_status() -> dict[str, Any]:
+    """
+    Get the current rhythm engine status.
+
+    Shows activity level (active/normal/quiet), adaptive check interval,
+    and number of learned patterns. Useful for understanding how the
+    cerebellum is adapting its attention to the user's work patterns.
+
+    Returns:
+        Dict with mode, check_interval, activity_level, patterns_known.
+    """
+    monitor = _get_monitor()
+    from digital_cerebellum.rhythm.engine import RhythmEngine
+    rhythm = RhythmEngine(monitor.habit_observer)
+    return _sanitize(rhythm.state)
+
+
+# ======================================================================
 # Resources
 # ======================================================================
 

@@ -488,9 +488,9 @@ class TestTankLearning:
         )
 
     def test_correction_net_produces_nonzero_output(self):
-        """After training, at least one microzone should produce nonzero corrections."""
+        """After training (past warmup), at least one microzone should produce nonzero corrections."""
         env = TankBattleEnv(TankConfig(
-            round_max_ticks=200, randomize_spawns=False, noise=0.0,
+            round_max_ticks=400, randomize_spawns=False, noise=0.0,
         ))
         ctrl = TankController(
             state_dim=env.state_dim, action_dim=env.action_dim,
@@ -499,7 +499,8 @@ class TestTankLearning:
                 correction_lr=0.002, correction_scale=0.15,
             ),
         )
-        for _ in range(300):
+        ctrl._warmup_steps = 200
+        for _ in range(600):
             if env.done:
                 env.reset()
             ctrl.step(env)

@@ -1,13 +1,14 @@
 # skill.yaml - Digital Cerebellum for OpenClaw
 name: digital-cerebellum
-version: 0.6.0
+version: 0.7.0
 author: QEout
 description: >
   The missing cerebellum for your AI agent. LLMs think — this acts.
-  One install gives your agent 5 biological capabilities: learned actions
+  One install gives your agent 6 biological capabilities: learned actions
   execute in <10ms (not 2-5s), errors get caught before they cascade,
   experiences persist across sessions, gut feelings warn of danger,
-  and curiosity drives exploration. 22 MCP tools, zero config.
+  curiosity drives exploration, and your habits are learned automatically
+  with predictive awakening. 25 MCP tools, zero config.
 license: MIT
 
 permissions:

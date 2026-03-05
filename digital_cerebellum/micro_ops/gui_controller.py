@@ -89,10 +89,14 @@ class CorrectionMicrozone:
     Multiple microzones operate in parallel on the same mossy fiber input
     (state) and their outputs are summed at the deep cerebellar nuclei.
 
-    Output is bounded via tanh (biological: Purkinje cell firing rate
-    saturation) to prevent correction explosion during early training.
+    action_mask constrains which action dimensions this microzone controls.
+    In biology, different microzones innervate different motor effectors
+    (e.g., one for saccade, another for limb movement). Mixing all
+    dimensions causes destructive interference between microzones.
+
+    Output is bounded via tanh (Purkinje cell firing rate saturation).
     """
-    __slots__ = ('name', 'net', 'optimizer', 'scale', 'enabled')
+    __slots__ = ('name', 'net', 'optimizer', 'scale', 'enabled', 'action_mask')
 
     def __init__(
         self,
@@ -103,10 +107,16 @@ class CorrectionMicrozone:
         lr: float = 0.01,
         scale: float = 0.5,
         enabled: bool = True,
+        action_mask: np.ndarray | None = None,
     ):
         self.name = name
         self.scale = scale
         self.enabled = enabled
+        self.action_mask = (
+            torch.from_numpy(action_mask).float()
+            if action_mask is not None
+            else torch.ones(action_dim)
+        )
         self.net = torch.nn.Sequential(
             torch.nn.Linear(state_dim, hidden_dim),
             torch.nn.ReLU(),
@@ -121,6 +131,10 @@ class CorrectionMicrozone:
         self.optimizer = torch.optim.Adam(
             self.net.parameters(), lr=lr, weight_decay=1e-4,
         )
+
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        """Compute masked, scaled correction."""
+        return self.net(state) * self.scale * self.action_mask
 
 
 class GUIController:
@@ -161,6 +175,7 @@ class GUIController:
         )
 
         self._microzones = self._build_microzones()
+        self._warmup_steps = 500  # let forward model learn before corrections kick in
 
         self._step = 0
         self._noise_scale = self.cfg.cortex_noise
@@ -209,16 +224,34 @@ class GUIController:
         return np.clip(action, -1.0, 1.0)
 
     def cerebellar_correction(self, state: np.ndarray) -> np.ndarray:
-        """Sum corrections from all enabled microzones (deep cerebellar nuclei)."""
+        """Sum corrections from all enabled microzones (deep cerebellar nuclei).
+
+        Corrections are gated by forward model confidence: when the FM
+        hasn't learned enough, corrections are suppressed. This prevents
+        training on garbage gradients from corrupting the correction nets.
+        """
         if not self.cerebellum_enabled:
             return np.zeros(self.action_dim, dtype=np.float32)
+        if self._step < self._warmup_steps:
+            return np.zeros(self.action_dim, dtype=np.float32)
+
+        fm_conf = self.forward_model_confidence
+        if fm_conf < 0.3:
+            return np.zeros(self.action_dim, dtype=np.float32)
+
         with torch.no_grad():
             s = torch.from_numpy(state).float().unsqueeze(0)
             total = torch.zeros(1, self.action_dim)
             for mz in self._microzones:
                 if mz.enabled:
-                    total += mz.net(s) * mz.scale
-            return total.squeeze(0).numpy()
+                    total += mz.forward(s)
+            return (total.squeeze(0).numpy() * fm_conf).astype(np.float32)
+
+    @property
+    def forward_model_confidence(self) -> float:
+        """How reliable is the forward model's gradient?"""
+        err = self.forward_model.mean_recent_error
+        return float(1.0 / (1.0 + err * 5.0))
 
     def step(self, env: Environment) -> TrialResult:
         """
@@ -332,14 +365,16 @@ class GUIController:
 
         For each microzone k:
           1. Freeze all OTHER microzones and the forward model
-          2. Compute action = tanh(cortex + mz_k(state) + Σ_{j≠k} detach(mz_j(state)))
+          2. Compute masked action = cortex + mz_k.forward(state) + Σ detach(mz_j)
           3. Predict next state through the frozen FM
           4. Compute microzone k's error from the predicted next state
           5. Backprop only through mz_k's correction net
 
-        This mirrors the biological independence of microzones: each has its own
-        Purkinje cell population and climbing fiber, learning in parallel without
-        interfering with other microzones' synaptic weights.
+        Key design decisions:
+          - Action masking: each microzone only corrects its designated dims
+          - Forward model warmup: corrections don't train until FM is useful
+          - Gradient clipping per-microzone: prevents cross-microzone interference
+          - Regularization prevents correction magnitude from growing unchecked
         """
         self._recent_spes.append(spe_scalar)
         if len(self._recent_spes) > 100:
@@ -348,22 +383,23 @@ class GUIController:
         if not self.cerebellum_enabled:
             return
 
+        if self._step < self._warmup_steps:
+            return
+
         s_t = torch.from_numpy(state).float().unsqueeze(0)
         c_t = torch.from_numpy(cortex).float().unsqueeze(0)
 
         for p in self.forward_model.parameters():
             p.requires_grad_(False)
 
-        modulation = 1.0 + min(spe_scalar, 3.0)
-
         for mz in self._microzones:
             if not mz.enabled:
                 continue
 
-            correction = mz.net(s_t) * mz.scale
+            correction = mz.forward(s_t)
 
             other_corr = sum(
-                (omz.net(s_t) * omz.scale).detach()
+                omz.forward(s_t).detach()
                 for omz in self._microzones
                 if omz is not mz and omz.enabled
             )
@@ -381,12 +417,12 @@ class GUIController:
 
             future_error = errors[mz.name]
             error_loss = future_error.pow(2).sum()
-            reg = correction.pow(2).mean() * 0.02
-            loss = (error_loss + reg) * modulation
+            reg = correction.pow(2).mean() * 0.1
+            loss = error_loss + reg
 
             mz.optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(mz.net.parameters(), 1.0)
+            torch.nn.utils.clip_grad_norm_(mz.net.parameters(), 0.5)
             mz.optimizer.step()
 
         for p in self.forward_model.parameters():
@@ -498,7 +534,7 @@ class GUIController:
         with torch.no_grad():
             s = torch.from_numpy(state).float().unsqueeze(0)
             return {
-                mz.name: (mz.net(s).squeeze(0) * mz.scale).numpy()
+                mz.name: mz.forward(s).squeeze(0).numpy()
                 if mz.enabled else np.zeros(self.action_dim, dtype=np.float32)
                 for mz in self._microzones
             }

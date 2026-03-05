@@ -8,15 +8,16 @@ A cerebellum. One organ, one install.
 
 Your AI agent today is "cortex-only" — every action needs full LLM reasoning: 2-5 seconds of thinking per click. That's like a pianist thinking about each finger movement. The biological solution? A cerebellum: a separate organ that handles execution, timing, error correction, and learned patterns — so the cortex can focus on planning.
 
-**Digital Cerebellum does the same thing for your AI agent.** After installation, your agent automatically gains five capabilities — not as separate tools you wire up, but as emergent properties of having a cerebellum:
+**Digital Cerebellum does the same thing for your AI agent.** After installation, your agent automatically gains six capabilities — not as separate tools you wire up, but as emergent properties of having a cerebellum:
 
 1. **Learned actions execute instantly** — the cerebellum remembers how you did it last time (<10ms vs 2-5s)
 2. **Errors get caught before they cascade** — prediction errors trigger early stopping, not post-mortem debugging
 3. **Experiences persist across sessions** — episodic memory that decays, consolidates, and reconsolidates like biological memory
 4. **Gut feelings warn before reasoning does** — somatic markers from past patterns provide pre-rational risk signals
 5. **Curiosity drives exploration** — learning progress tracking reveals blind spots and suggests what to try next
+6. **Your habits are learned automatically** — the cerebellum observes when and what you do, predicts what's next, and prepares before you ask
 
-These aren't five separate products. They're what happens when you give an agent a cerebellum.
+These aren't six separate products. They're what happens when you give an agent a cerebellum.
 
 ## Why It Matters
 
@@ -27,6 +28,7 @@ These aren't five separate products. They're what happens when you give an agent
 | Restart = blank slate | Restart = picks up where it left off |
 | No intuition about risk | "This feels wrong" before reasoning starts |
 | Repeats same exploration forever | Knows what it knows, seeks what it doesn't |
+| Polls every 30 minutes (cron job) | Predicts when to act (rhythm system) |
 
 **Measured on real OpenClaw tasks:**
 - **3x faster** overall, **66% fewer tokens** (repeated tasks skip LLM entirely)
@@ -78,7 +80,30 @@ Round 3: Agent tries to delete system files
          → Agent stops, asks for help instead of causing damage
 ```
 
-No configuration. No prompt engineering. The cerebellum just makes your agent better.
+## Example: Habit Learning
+
+```
+Week 1: Agent observes your daily patterns:
+         Mon 09:01 — check email
+         Mon 09:15 — open Slack
+         Tue 09:03 — check email
+         Tue 09:12 — open Slack
+         ...
+
+Week 2: Cerebellum extracts temporal patterns:
+         → "User checks email at ~09:00 (±10min) on weekdays"
+         → "After email, user opens Slack within 12 minutes"
+
+         Monday 08:55:
+         → Cerebellum: "You usually check email around now.
+            Shall I prepare an inbox summary?"
+
+         After email check:
+         → Cerebellum: "You usually open Slack next.
+            3 unread channels detected."
+```
+
+Not polling. Not cron jobs. Predictive awakening based on learned rhythms.
 
 ## For Developers Who Want Fine Control
 
@@ -97,6 +122,9 @@ While the cerebellum works automatically, power users can call any of the 22 too
 | Consolidate memory offline | `run_sleep_cycle` |
 | Ask gut feeling | `get_gut_feeling` |
 | Get exploration ideas | `get_exploration_suggestions` |
+| View learned habits | `get_habit_patterns` |
+| Get proactive suggestions | `get_proactive_suggestions` |
+| Check rhythm status | `get_rhythm_status` |
 | Evaluate tool call safety | `evaluate_tool_call` |
 | Evaluate payment risk | `evaluate_payment` |
 | Evaluate shell command | `evaluate_shell_command` |
@@ -111,36 +139,17 @@ While the cerebellum works automatically, power users can call any of the 22 too
 
 But the whole point of a cerebellum is that you shouldn't have to think about it. Install it and let it work.
 
-## Real-Time GUI Control (with OpenClaw's computer-use)
+## Desktop GUI Control (Coming Soon)
 
 OpenClaw has eyes (`screenshot`) and hands (`mouse_move`, `left_click`, `type`).
-Digital Cerebellum is the brain that connects them into a learning loop.
+Digital Cerebellum will add the motor learning loop:
 
-```python
-from openclaw_sdk import OpenClawClient
-from digital_cerebellum.micro_ops.openclaw_env import run_openclaw_cerebellum
-
-async with OpenClawClient.connect() as client:
-    # The cerebellum drives OpenClaw's GUI tools directly:
-    #   screenshot → ScreenStateEncoder → state vector
-    #   GUIController computes action (cortex + cerebellar correction)
-    #   GUIActionSpace decodes → mouse_move / left_click / type
-    #   Forward model learns from prediction errors
-    results = await run_openclaw_cerebellum(
-        client,
-        agent_id="my-agent",
-        episodes=20,
-        steps_per_episode=100,
-    )
-```
-
-Over episodes, the cerebellum learns:
-- **Motor mapping**: which action vectors produce which cursor movements
-- **Targeting**: how to move toward UI elements efficiently
+- **Skill sequences**: multi-step GUI operations (click → type → submit) stored and replayed as a single skill
+- **Motor mapping**: learned association between action vectors and cursor movements
 - **Timing**: when to click, drag, or wait
-- **Error patterns**: what sequences lead to failures
+- **Error patterns**: detect sequences that lead to failures before they cascade
 
-This runs at the speed of OpenClaw's screenshot round-trip (~50-200ms). The cerebellar computation itself adds <1ms overhead.
+The architecture and bridge (`openclaw_env.py`) exist. Real-time continuous control is in active development — currently validated on simulated environments (285Hz, <1ms overhead), pending real desktop integration.
 
 ## Requirements
 

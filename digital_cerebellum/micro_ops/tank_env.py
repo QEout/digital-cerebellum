@@ -711,25 +711,39 @@ class TankController(GUIController):
     """
 
     def _build_microzones(self) -> list[CorrectionMicrozone]:
+        """Three parallel microzones with action masking.
+
+        Each microzone only corrects the action dimensions it's responsible for:
+          aim   → turret_d_angle (dim 2) + shoot_trigger (dim 3)
+          dodge → move_x (dim 0) + move_y (dim 1)
+          move  → move_x (dim 0) + move_y (dim 1)
+
+        Dodge and move share movement dims but have different error signals:
+        dodge reacts to bullet proximity, move drives toward the target.
+        Their competition is natural and resolves via gradient magnitude.
+        """
         cfg = self.cfg
         return [
             CorrectionMicrozone(
                 "aim", self.state_dim, self.action_dim,
                 hidden_dim=cfg.correction_hidden,
                 lr=cfg.correction_lr,
-                scale=cfg.correction_scale * 0.8,
+                scale=cfg.correction_scale,
+                action_mask=np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32),
             ),
             CorrectionMicrozone(
                 "dodge", self.state_dim, self.action_dim,
                 hidden_dim=cfg.correction_hidden,
-                lr=cfg.correction_lr * 2.0,
+                lr=cfg.correction_lr * 1.5,
                 scale=cfg.correction_scale * 1.2,
+                action_mask=np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float32),
             ),
             CorrectionMicrozone(
                 "move", self.state_dim, self.action_dim,
                 hidden_dim=cfg.correction_hidden,
                 lr=cfg.correction_lr,
-                scale=cfg.correction_scale * 0.5,
+                scale=cfg.correction_scale * 0.8,
+                action_mask=np.array([1.0, 1.0, 0.0, 0.0], dtype=np.float32),
             ),
         ]
 
@@ -762,7 +776,7 @@ class TankController(GUIController):
         aim_sin = turret_cx * target_ny - turret_cy * target_nx
         aim_cos_gap = 1.0 - (turret_cx * target_nx + turret_cy * target_ny)
 
-        return torch.cat([aim_sin * 3.0, aim_cos_gap * 2.0], dim=-1)
+        return torch.cat([aim_sin * 2.0, aim_cos_gap * 1.0], dim=-1)
 
     @staticmethod
     def _dodge_error(state_t: torch.Tensor) -> torch.Tensor:
@@ -778,8 +792,8 @@ class TankController(GUIController):
         proximity = 1.0 / (bullet_dist + 0.15)
 
         return torch.cat([
-            bullet_dx * proximity * 2.0,
-            bullet_dy * proximity * 2.0,
+            bullet_dx * proximity * 1.5,
+            bullet_dy * proximity * 1.5,
         ], dim=-1)
 
     @staticmethod
@@ -794,8 +808,8 @@ class TankController(GUIController):
         strategy = state_t[..., 14:15].clamp(0.1, 1.0)
 
         return torch.cat([
-            target_dx * strategy * 1.5,
-            target_dy * strategy * 1.5,
+            target_dx * strategy * 1.0,
+            target_dy * strategy * 1.0,
         ], dim=-1)
 
     def cortex_signal(self, state: np.ndarray) -> np.ndarray:

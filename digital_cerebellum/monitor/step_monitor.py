@@ -61,6 +61,7 @@ from digital_cerebellum.monitor.types import (
 from digital_cerebellum.monitor.step_forward_model import StepForwardModel
 from digital_cerebellum.monitor.cascade_detector import ErrorCascadeDetector
 from digital_cerebellum.monitor.failure_memory import FailureMemory
+from digital_cerebellum.memory.habit_observer import HabitObserver
 
 log = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ class StepMonitor:
             cascade_risk_threshold=cascade_risk_threshold,
         )
         self._failure_memory = FailureMemory()
+        self.habit_observer = HabitObserver()
 
         self._current_step: StepRecord | None = None
         self._step_count = 0
@@ -374,6 +376,27 @@ class StepMonitor:
                 "failed_steps": rollback_plan.failed_steps,
                 "recommendation": rollback_plan.recommendation,
             }
+
+        # Record action for habit learning
+        action_text_for_habit = (
+            self._history[-1].action_text if self._history else ""
+        )
+        if action_text_for_habit:
+            domain = ""
+            if self._history:
+                state_text = self._history[-1].state_text or ""
+                for kw, d in [("email", "email"), ("calendar", "calendar"),
+                              ("file", "file"), ("deploy", "devops"),
+                              ("slack", "chat"), ("browser", "web"),
+                              ("terminal", "shell"), ("code", "code")]:
+                    if kw in action_text_for_habit.lower() or kw in state_text.lower():
+                        domain = d
+                        break
+            self.habit_observer.record(
+                action=action_text_for_habit,
+                domain=domain,
+                success=inferred_success,
+            )
 
         from digital_cerebellum.viz.event_bus import event_bus as _eb
         _eb.emit("error", "ErrorComparator", spe=float(spe), step=self._step_count)
