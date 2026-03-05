@@ -1,7 +1,7 @@
 [project]
 name = "digital-cerebellum"
-version = "0.6.1"
-description = "The missing cerebellum for AI agents — one organ, not a toolkit. Install it and your agent learns patterns, catches errors, builds intuition, and explores autonomously."
+version = "0.7.0"
+description = "The missing cerebellum for AI agents — one organ, not a toolkit. Install it and your agent learns patterns, catches errors, builds intuition, explores autonomously, and predicts your habits."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"

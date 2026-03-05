@@ -49,7 +49,7 @@ The cerebellum works as a **transparent sidecar** — it monitors every step you
 
 ## How It Works (You Don't Need to Know This)
 
-The cerebellum exposes 22 MCP tools, but you rarely call them explicitly. The two most important integrate automatically:
+The cerebellum exposes 25 MCP tools, but you rarely call them explicitly. The two most important integrate automatically:
 
 - **`monitor_before_step`** — called before every action. Predicts outcome, injects relevant memories, warns of danger.
 - **`monitor_after_step`** — called after every action. Compares prediction to reality, detects cascades, stores experience.
@@ -107,7 +107,7 @@ Not polling. Not cron jobs. Predictive awakening based on learned rhythms.
 
 ## For Developers Who Want Fine Control
 
-While the cerebellum works automatically, power users can call any of the 22 tools directly:
+While the cerebellum works automatically, power users can call any of the 25 tools directly:
 
 | What you want | Tool |
 |---|---|

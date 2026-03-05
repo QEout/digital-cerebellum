@@ -5,11 +5,11 @@
 
 **LLMs are the cortex — they think. This is the cerebellum — it acts.**
 
-Every AI agent today is "cortex-only": 2-5 seconds of thinking per action. Add a cerebellum: learned actions execute in <10ms, unknown actions get real-time error prediction. 22 MCP tools exposing 5 biological capabilities: real-time calibration, skill learning, fluid memory, intuition, and curiosity-driven exploration.
+Every AI agent today is "cortex-only": 2-5 seconds of thinking per action. Add a cerebellum: learned actions execute in <10ms, unknown actions get real-time error prediction. 25 MCP tools exposing 6 biological capabilities: real-time calibration, skill learning, fluid memory, intuition, curiosity-driven exploration, and habit learning with predictive awakening.
 
 **LLM 是皮层——它思考。这是小脑——让它行动。**
 
-当前所有 AI Agent 都是"纯皮层"架构：每个动作要想 2-5 秒。加上小脑：学过的动作 <10ms 执行，没学过的动作实时预测后果。22 个 MCP 工具，5 大生物学能力：实时校准、技能学习、流体记忆、直觉感知、自主探索。
+当前所有 AI Agent 都是"纯皮层"架构：每个动作要想 2-5 秒。加上小脑：学过的动作 <10ms 执行，没学过的动作实时预测后果。25 个 MCP 工具，6 大生物学能力：实时校准、技能学习、流体记忆、直觉感知、自主探索、习惯学习与预测性唤醒。
 
 ---
 
@@ -286,7 +286,7 @@ Your agent now has a cerebellum. No config, no prompt changes — it monitors ev
 
 ---
 
-**22 MCP tools** — the API surface of one organ, not 22 separate products:
+**25 MCP tools** — the API surface of one organ, not 25 separate products:
 
 | Tool | What it does |
 |------|-------------|
@@ -312,6 +312,9 @@ Your agent now has a cerebellum. No config, no prompt changes — it monitors ev
 | `introspect` | Metacognitive self-report |
 | `get_stats` | System statistics and metrics |
 | `get_curiosity_ranking` | Domains ranked by learning potential |
+| `get_habit_patterns` | Extract learned temporal behaviour patterns |
+| `get_proactive_suggestions` | Predictive suggestions based on user habits |
+| `get_rhythm_status` | Adaptive check interval and activity level |
 
 ## 6 Built-in Microzones (Universal Cerebellar Transform)
 
@@ -591,18 +594,20 @@ Run benchmarks: `python -m benchmarks.run_all --phase3`
 - [x] **Phase 5**: Generic microzone framework — 6 built-in microzones (tool_call, payment, shell_command, file_operation, api_call, response_prediction)
 - [x] **Phase 6**: Micro-operation engine — StateEncoder, ForwardModel, ActionEncoder, MicroOpEngine (285Hz, 3.5ms/step, SPE↓99%)
 - [x] **Phase 7**: Step Monitor — StepMonitor, ErrorCascadeDetector, FailureMemory, save/load, 100% cascade detection across 7 domains
-- [x] **MCP Server**: 22 tools (safety + speed + reliability + memory + intuition + exploration + meta), works with Claude Desktop, Cursor, OpenClaw, any MCP client
+- [x] **MCP Server**: 25 tools (safety + speed + reliability + memory + intuition + exploration + habits + rhythm + meta), works with Claude Desktop, Cursor, OpenClaw, any MCP client
 - [x] **LangChain integration**: `CerebellumCallback` — one-line drop-in for any LangChain agent
 - [x] **AutoRollback**: Cascade detection → automatic rollback plan computation
 - [x] **Reliability Benchmark**: 7 scenarios, 71% waste prevention, 2.3-step avg detection delay
 - [x] **OpenClaw Benchmark**: 5 desktop automation scenarios — 204x speedup, 5/5 cascade detection, 5/5 correct rollbacks
 - [x] **OpenClaw Live Integration**: Real agent (kimi-k2.5) monitored via sidecar StepMonitor — Q&A, reasoning, tool use, cascade detection, skill learning all verified
 - [x] **SkillStore Persistence**: Skills survive restarts — JSON+numpy save/load, auto-integrated with MCP server
-- [x] **Full Cerebellum API**: All 5 biological capabilities exposed via 22 MCP tools — one organ, not a toolkit
+- [x] **Full Cerebellum API**: All 6 biological capabilities exposed via 25 MCP tools — one organ, not a toolkit
+- [x] **HabitObserver + Rhythm**: Temporal pattern extraction (daily, sequential, frequency) + predictive awakening (replaces cron-style polling)
 - [x] **ClawHub Skill**: `openclaw skills install digital-cerebellum` — one command, zero config, transparent sidecar
 - [x] **Phase 8b — GUI Control**: ScreenStateEncoder, GUIActionSpace, AimTrainerEnv, GUIController — 2.2x throughput, 1094 Hz, zero LLM calls
 - [x] **3D Visualization**: Real-time WebSocket dashboard — Three.js particle brain, bloom post-processing, live SPE/reward charts, EventBus instrumentation
-- [x] 296 unit tests passing (+ 26 LLM-dependent deselected in CI)
+- [x] **Tank Battle Multi-Microzone**: Action masking + FM warmup + confidence gating — 3/3 seed consistency, CB outperforms cortex-only
+- [x] 341 unit tests passing (+ 26 LLM-dependent deselected in CI)
 - [x] Published on [PyPI](https://pypi.org/project/digital-cerebellum/) and [Zenodo](https://doi.org/10.5281/zenodo.18850778)
 
 ## Docs

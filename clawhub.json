@@ -1,0 +1,26 @@
+{
+  "name": "Digital Cerebellum",
+  "slug": "digital-cerebellum",
+  "tagline": "The missing cerebellum for your AI agent. LLMs think — this acts.",
+  "description": "One install gives your agent 6 biological capabilities: learned actions execute in <10ms, errors get caught before they cascade, experiences persist across sessions, gut feelings warn of danger, curiosity drives exploration, and your habits are learned automatically with predictive awakening. 25 MCP tools, zero config.",
+  "category": "productivity",
+  "tags": [
+    "cerebellum",
+    "agent",
+    "learning",
+    "memory",
+    "safety",
+    "mcp",
+    "automation",
+    "habit-learning",
+    "prediction",
+    "neuroscience"
+  ],
+  "version": "0.7.0",
+  "license": "MIT",
+  "pricing": "free",
+  "author": "QEout",
+  "homepage": "https://github.com/QEout/digital-cerebellum",
+  "support_url": "https://github.com/QEout/digital-cerebellum/issues",
+  "repository": "https://github.com/QEout/digital-cerebellum"
+}
