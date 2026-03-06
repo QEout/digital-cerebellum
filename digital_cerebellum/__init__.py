@@ -1,9 +1,16 @@
 """
 Digital Cerebellum — a cerebellar-inspired cognitive architecture.
 
-Three ways to use:
+Four ways to use:
 
-1. As a cerebellum SDK (plug into your own agent)::
+1. As a desktop agent (GPT-5.4 + cerebellum learning)::
+
+    from digital_cerebellum.agent import CerebellumAgent
+
+    agent = CerebellumAgent(openai_client)
+    result = await agent.run("Book a flight to Tokyo", computer)
+
+2. As a cerebellum SDK (plug into your own agent)::
 
     from digital_cerebellum import DigitalCerebellum
     from digital_cerebellum.microzones.tool_call import ToolCallMicrozone
@@ -12,7 +19,7 @@ Three ways to use:
     cb.register_microzone(ToolCallMicrozone())
     result = cb.evaluate("tool_call", {"tool_name": "send_email", ...})
 
-2. As a step monitor (wrap any agent's execution loop)::
+3. As a step monitor (wrap any agent's execution loop)::
 
     from digital_cerebellum import StepMonitor
 
@@ -21,7 +28,7 @@ Three ways to use:
     # ... execute action ...
     verdict = monitor.after_step(outcome="save dialog appeared")
 
-3. As a reference brain (LLM + cerebellum, for demos)::
+4. As a reference brain (LLM + cerebellum, for demos)::
 
     from digital_cerebellum import DigitalBrain
 
@@ -45,4 +52,4 @@ __all__ = [
     "MicroOpEngine", "MicroOpConfig",
     "HabitObserver", "RhythmEngine",
 ]
-__version__ = "0.7.0"
+__version__ = "0.8.0"
